@@ -11,19 +11,17 @@ import {
   Page,
   QuoteCard,
   QuoteFields,
-  QuoteText,
   Row,
   Segmented,
 } from './components'
 import { reflow, tidy } from './format'
+import { QuoteDeck } from './deck'
 import { Icon } from './icons'
+import { haptic, markTransition, morphName } from './motion'
 import { currentBookId, type Store } from './store'
 import { loadSyncConfig, saveSyncConfig, testConfig, type SyncConfig } from './sync'
 import type { Lang } from './types'
 import { byPage, download, quoteOfTheDay, search, toCsv, toMarkdown } from './util'
-
-const todayLabel = () =>
-  new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()
 
 function SettingsButton({ store }: { store: Store }) {
   const k = store.syncState.kind
@@ -38,19 +36,9 @@ function SettingsButton({ store }: { store: Store }) {
 export function Library({ store, freshId }: { store: Store; freshId?: string }) {
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const [shuffled, setShuffled] = useState<string | null>(null)
   const results = useMemo(() => search(store.quotes, store.bookMap, query), [store.quotes, store.bookMap, query])
   const daily = quoteOfTheDay(store.quotes)
-  const featured = store.quotes.find((q) => q.id === shuffled) ?? daily
   const bookOf = (id?: string) => (id ? store.bookMap.get(id) : undefined)
-
-  const shuffle = () => {
-    if (store.quotes.length < 2) return
-    let next
-    do next = store.quotes[Math.floor(Math.random() * store.quotes.length)]
-    while (next.id === featured?.id)
-    setShuffled(next.id)
-  }
 
   const nav = {
     leading: <SettingsButton store={store} />,
@@ -105,52 +93,23 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
             {results.length} {results.length === 1 ? 'result' : 'results'}
           </h3>
           <div className="quote-list">
-            {results.map((q) => (
-              <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} highlight={query} />
+            {results.map((q, i) => (
+              <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} highlight={query} index={i} source="search" />
             ))}
           </div>
         </>
       ) : (
         <>
-          {featured && (
-            <a href={`#/quote/${featured.id}`} className="today-card" key={featured.id}>
-              <div className="today-head">
-                <span className="label">{featured.id === daily?.id ? `Today · ${todayLabel()}` : 'Rediscovered'}</span>
-                <button
-                  className="text-icon"
-                  aria-label="Shuffle"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    shuffle()
-                  }}
-                >
-                  <Icon name="sparkle" size={18} />
-                </button>
-              </div>
-              <QuoteText text={featured.text} className="large clamp-today" />
-              <Attribution book={bookOf(featured.bookId)} page={featured.page} />
-            </a>
-          )}
+          <QuoteDeck quotes={store.quotes} dailyId={daily?.id} bookOf={bookOf} />
           <h3 className="label">Recent</h3>
           <div className="quote-list">
-            {store.quotes.slice(0, 60).map((q) => (
-              <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} fresh={q.id === freshId} />
+            {store.quotes.slice(0, 60).map((q, i) => (
+              <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} fresh={q.id === freshId} index={i} />
             ))}
           </div>
         </>
       )}
     </Page>
-  )
-}
-
-/** Serif title, mono author and page — the way a book would credit itself. */
-function Attribution({ book, page }: { book?: { title: string; author: string }; page?: string }) {
-  if (!book && !page) return null
-  return (
-    <div className="attribution">
-      {book && <span className="attr-title">{book.title}</span>}
-      <span className="attr-mono">{[book?.author, page && `p.${page}`].filter(Boolean).join(' · ')}</span>
-    </div>
   )
 }
 
@@ -165,6 +124,24 @@ export function PageArt() {
       <span className="art-line short" />
     </div>
   )
+}
+
+/** Covers lean toward your finger, like picking a book off the shelf. */
+function tilt(e: React.PointerEvent<HTMLElement>) {
+  const cover = e.currentTarget.querySelector<HTMLElement>('.cover')
+  if (!cover) return
+  const r = cover.getBoundingClientRect()
+  const x = (e.clientX - r.left) / r.width - 0.5
+  const y = (e.clientY - r.top) / r.height - 0.5
+  cover.style.setProperty('--ry', `${x * 16}deg`)
+  cover.style.setProperty('--rx', `${-y * 16}deg`)
+  cover.style.setProperty('--gx', `${(x + 0.5) * 100}%`)
+  cover.style.setProperty('--gy', `${(y + 0.5) * 100}%`)
+}
+function untilt(e: React.PointerEvent<HTMLElement>) {
+  const cover = e.currentTarget.querySelector<HTMLElement>('.cover')
+  cover?.style.removeProperty('--rx')
+  cover?.style.removeProperty('--ry')
 }
 
 export function Shelf({ store }: { store: Store }) {
@@ -183,8 +160,19 @@ export function Shelf({ store }: { store: Store }) {
       )}
       <div className="cover-grid">
         {books.map((b) => (
-          <a key={b.id} href={`#/book/${b.id}`} className="cover-cell">
-            <BookCover book={b} />
+          <a
+            key={b.id}
+            href={`#/book/${b.id}`}
+            className="cover-cell"
+            onPointerMove={tilt}
+            onPointerLeave={untilt}
+            onPointerUp={untilt}
+            onClick={(e) => {
+              markTransition('cover', b.id, 'grid')
+              e.currentTarget.querySelector<HTMLElement>('.cover')?.style.setProperty('view-transition-name', 'morph-cover')
+            }}
+          >
+            <BookCover book={b} morph={morphName('cover', b.id, 'grid')} />
             <span className="cover-caption-title">{b.title}</span>
             <span className="cover-caption-mono">
               {[b.author, `${counts.get(b.id)} ${counts.get(b.id) === 1 ? 'quote' : 'quotes'}`].filter(Boolean).join(' · ')}
@@ -221,7 +209,11 @@ export function BookView({ store, id }: { store: Store; id: string }) {
     >
       {book ? (
         <div className="book-hero">
-          <BookCover book={{ ...book, title: editing ? title || book.title : book.title }} size="large" />
+          <BookCover
+            book={{ ...book, title: editing ? title || book.title : book.title }}
+            size="large"
+            morph={morphName('cover', book.id, 'detail')}
+          />
           {editing ? (
             <div className="fields card">
               <label className="field-line">
@@ -262,7 +254,7 @@ export function BookView({ store, id }: { store: Store; id: string }) {
         {quotes.map((q, i) => (
           <div key={q.id} className="numbered-row">
             <span className="numbered-index">{String(i + 1).padStart(2, '0')}</span>
-            <QuoteCard quote={q} showBook={false} />
+            <QuoteCard quote={q} showBook={false} index={i} source="book" />
           </div>
         ))}
       </div>
@@ -279,6 +271,7 @@ export function QuoteView({ store, id }: { store: Store; id: string }) {
   const shareText = `“${quote.text}”${credit ? `\n— ${credit}` : ''}`
   const copy = async () => {
     await navigator.clipboard?.writeText(shareText)
+    haptic('success')
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
@@ -292,15 +285,17 @@ export function QuoteView({ store, id }: { store: Store; id: string }) {
           {'share' in navigator && (
             <GlassButton icon="share" ariaLabel="Share" onClick={() => navigator.share({ text: shareText }).catch(() => {})} />
           )}
-          <GlassButton icon={copied ? 'check' : 'copy'} ariaLabel="Copy" onClick={copy} />
+          <GlassButton icon={copied ? 'check' : 'copy'} animate={copied} ariaLabel="Copy" onClick={copy} />
         </GlassGroup>
       }
     >
       <article className="quote-hero">
-        <EditableQuote store={store} quote={quote} large />
+        <EditableQuote store={store} quote={quote} large morph={morphName('quote', quote.id, 'detail')} />
       </article>
-      <QuoteFields store={store} quote={quote} />
-      <div className="quiet-actions">
+      <div className="rise-in">
+        <QuoteFields store={store} quote={quote} />
+      </div>
+      <div className="quiet-actions rise-in">
         <span className="meta-mono">
           Filed {new Date(quote.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
         </span>

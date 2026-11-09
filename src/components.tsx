@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { createPortal } from 'react-dom'
 import { bare, isGujarati, tidy } from './format'
 import { Icon, type IconName } from './icons'
+import { haptic, markTransition, morphName, useReveal } from './motion'
 import { setPendingPhoto } from './pending'
 import type { Store } from './store'
 import { parseTags } from './util'
@@ -26,9 +27,11 @@ export function GlassButton({
   onClick,
   disabled,
   ariaLabel,
+  animate,
 }: {
   icon?: IconName
   label?: string
+  animate?: boolean
   prominent?: boolean
   destructive?: boolean
   href?: string
@@ -39,7 +42,7 @@ export function GlassButton({
   const cls = `glass-button glass ${label ? 'capsule' : 'circle'} ${prominent ? 'prominent-glass' : ''} ${destructive ? 'destructive' : ''}`
   const body = (
     <>
-      {icon && <Icon name={icon} size={label ? 18 : 21} />}
+      {icon && <Icon name={icon} size={label ? 18 : 21} animate={animate} />}
       {label && <span>{label}</span>}
     </>
   )
@@ -50,7 +53,16 @@ export function GlassButton({
       </a>
     )
   return (
-    <button type="button" className={cls} onClick={onClick} disabled={disabled} aria-label={ariaLabel ?? label}>
+    <button
+      type="button"
+      className={cls}
+      onClick={() => {
+        haptic('tap')
+        onClick?.()
+      }}
+      disabled={disabled}
+      aria-label={ariaLabel ?? label}
+    >
       {body}
     </button>
   )
@@ -134,11 +146,17 @@ export function QuoteText({
   uncertain,
   className = '',
   marks = true,
+  morph,
+  reveal,
 }: {
   text: string
   highlight?: string
   uncertain?: string[]
   className?: string
+  /** view-transition-name, when this text is morphing between screens. */
+  morph?: string
+  /** Fade the words in one after another. */
+  reveal?: boolean
   /** Wrap in quotation marks, the opening one hung in the margin in gold. */
   marks?: boolean
 }) {
@@ -149,7 +167,18 @@ export function QuoteText({
   const re = terms.length ? new RegExp(`(${terms.map(escapeRe).join('|')})`, 'giu') : null
   const unsure = new Set(uncertain ?? [])
 
+  let w = 0
   const renderPara = (p: string) => {
+    if (reveal)
+      return p.split(/(\s+)/).map((tok, i) =>
+        /^\s+$/.test(tok) ? (
+          tok
+        ) : (
+          <span key={i} className={`w ${unsure.has(bare(tok)) ? 'unsure' : ''}`} style={{ ['--w' as string]: Math.min(w++, 40) }}>
+            {tok}
+          </span>
+        ),
+      )
     if (re) return p.split(re).map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part))
     if (unsure.size)
       return p.split(/(\s+)/).map((tok, i) =>
@@ -165,7 +194,11 @@ export function QuoteText({
   }
 
   return (
-    <div className={`quote-text ${gu ? 'gu' : ''} ${quoted ? 'quoted' : ''} ${className}`} lang={gu ? 'gu' : 'en'}>
+    <div
+      className={`quote-text ${gu ? 'gu' : ''} ${quoted ? 'quoted' : ''} ${reveal ? 'revealing' : ''} ${className}`}
+      lang={gu ? 'gu' : 'en'}
+      style={morph ? ({ viewTransitionName: morph } as React.CSSProperties) : undefined}
+    >
       {text.split(/\n{2,}/).map((p, i) => (
         <p key={i}>{renderPara(p)}</p>
       ))}
@@ -184,16 +217,31 @@ export function QuoteCard({
   showBook = true,
   highlight,
   fresh,
+  index = 0,
+  source = 'list',
 }: {
   quote: Quote
   book?: Book
   showBook?: boolean
   highlight?: string
   fresh?: boolean
+  /** Position in the list, for a staggered entrance. */
+  index?: number
+  source?: string
 }) {
+  const ref = useReveal<HTMLAnchorElement>()
   return (
-    <a className={`quote-card ${fresh ? 'fresh' : ''}`} href={`#/quote/${quote.id}`}>
-      <QuoteText text={quote.text} highlight={highlight} className="clamp" />
+    <a
+      ref={ref}
+      className={`quote-card reveal ${fresh ? 'fresh' : ''}`}
+      style={{ ['--d' as string]: `${Math.min(index, 8) * 45}ms` }}
+      href={`#/quote/${quote.id}`}
+      onClick={(e) => {
+        markTransition('quote', quote.id, source)
+        e.currentTarget.querySelector<HTMLElement>('.quote-text')?.style.setProperty('view-transition-name', 'morph-quote')
+      }}
+    >
+      <QuoteText text={quote.text} highlight={highlight} className="clamp" morph={morphName('quote', quote.id, source)} />
       {quote.note && <p className="quote-card-note">{quote.note}</p>}
       <div className="quote-card-meta">
         {showBook && book && <span className="meta-book">{book.title}</span>}
@@ -232,7 +280,16 @@ export function Segmented<T extends string>({
     <div className={`segmented ${className}`} role="radiogroup" style={{ ['--n' as string]: options.length, ['--i' as string]: i }}>
       <span className="segmented-thumb" />
       {options.map((o) => (
-        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} onClick={() => onChange(o.value)}>
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={o.value === value}
+          onClick={() => {
+            if (o.value !== value) haptic('tick')
+            onChange(o.value)
+          }}
+        >
           {o.label}
         </button>
       ))}
@@ -323,6 +380,36 @@ export function Sheet({
 }) {
   const [mounted, setMounted] = useState(open)
   const [shown, setShown] = useState(false)
+  const sheet = useRef<HTMLDivElement>(null)
+  const pull = useRef<{ y: number; dy: number } | null>(null)
+
+  // Drag the top of the sheet down to dismiss it.
+  const dragHandlers = {
+    onPointerDown: (e: React.PointerEvent) => {
+      if ((e.target as HTMLElement).closest('button, a, input, textarea, label')) return
+      pull.current = { y: e.clientY, dy: 0 }
+      e.currentTarget.setPointerCapture(e.pointerId)
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const p = pull.current
+      if (!p || !sheet.current) return
+      p.dy = Math.max(0, e.clientY - p.y)
+      // Resist a little, like a rubber band.
+      sheet.current.style.transition = 'none'
+      sheet.current.style.transform = `translateY(${p.dy * 0.9}px)`
+    },
+    onPointerUp: () => {
+      const p = pull.current
+      pull.current = null
+      if (!p || !sheet.current) return
+      sheet.current.style.transition = ''
+      sheet.current.style.transform = ''
+      if (p.dy > 110) {
+        haptic('tap')
+        onClose()
+      }
+    },
+  }
   useLayoutEffect(() => {
     if (open) {
       setMounted(true)
@@ -337,10 +424,12 @@ export function Sheet({
   return createPortal(
     <div className={`sheet-root ${shown ? 'shown' : ''}`}>
       <div className="sheet-backdrop" onClick={onClose} />
-      <div className={`sheet glass-sheet ${tall ? 'tall' : ''}`} role="dialog" aria-modal>
-        <div className="sheet-grabber" />
+      <div ref={sheet} className={`sheet glass-sheet ${tall ? 'tall' : ''}`} role="dialog" aria-modal>
+        <div className="sheet-drag" {...dragHandlers}>
+          <div className="sheet-grabber" />
+        </div>
         {(title || leading || trailing) && (
-          <div className="sheet-nav">
+          <div className="sheet-nav" {...dragHandlers}>
             <div className="navbar-side">{leading}</div>
             <div className="sheet-title">{title}</div>
             <div className="navbar-side end">{trailing}</div>
@@ -473,10 +562,10 @@ function hash(s: string) {
 export const coverColor = (b: Book) => CLOTH[hash(b.id + b.title) % CLOTH.length]
 
 /** A generated cloth-bound cover, so every book looks like a book. */
-export function BookCover({ book, size = 'grid' }: { book: Book; size?: 'grid' | 'large' | 'mini' }) {
+export function BookCover({ book, size = 'grid', morph }: { book: Book; size?: 'grid' | 'large' | 'mini'; morph?: string }) {
   const gu = isGujarati(book.title)
   return (
-    <div className={`cover ${size}`} style={{ ['--cloth' as string]: coverColor(book) }}>
+    <div className={`cover ${size}`} style={{ ['--cloth' as string]: coverColor(book), viewTransitionName: morph } as React.CSSProperties}>
       {size !== 'mini' && (
         <>
           <span className={`cover-title ${gu ? 'gu' : ''}`}>{book.title}</span>
@@ -496,11 +585,15 @@ export function EditableQuote({
   quote,
   uncertain,
   large,
+  morph,
+  reveal,
 }: {
   store: Store
   quote: Quote
   uncertain?: string[]
   large?: boolean
+  morph?: string
+  reveal?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(quote.text)
@@ -537,7 +630,13 @@ export function EditableQuote({
     )
   return (
     <button type="button" className="editable" onClick={() => setEditing(true)} aria-label="Edit text">
-      <QuoteText text={quote.text} uncertain={edited ? undefined : uncertain} className={large ? 'large' : ''} />
+      <QuoteText
+        text={quote.text}
+        uncertain={edited ? undefined : uncertain}
+        className={large ? 'large' : ''}
+        morph={morph}
+        reveal={reveal && !edited}
+      />
     </button>
   )
 }

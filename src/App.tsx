@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import { Capture } from './Capture'
 import { CaptureButton } from './components'
 import { Icon } from './icons'
+import { haptic, hasMorph } from './motion'
 import { BookView, Library, NewQuote, QuoteView, Settings, Shelf } from './screens'
 import { useStore } from './store'
 
@@ -26,7 +27,10 @@ function useRoute() {
       const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown }
       if (!doc.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) return apply()
       const d = depth(next) - depth(current.current)
-      document.documentElement.dataset.nav = d > 0 ? 'push' : d < 0 ? 'pop' : 'fade'
+      const detail = (h: string) => /^#\/(quote|book)\//.test(h)
+      // A tapped card grows into its page (iOS zoom transition); otherwise push/pop.
+      const zoom = hasMorph() && (detail(next) || detail(current.current))
+      document.documentElement.dataset.nav = zoom ? 'zoom' : d > 0 ? 'push' : d < 0 ? 'pop' : 'fade'
       doc.startViewTransition(apply)
     }
     window.addEventListener('hashchange', on)
@@ -91,13 +95,14 @@ export function App() {
       <main className={section === 'capture' ? 'full' : ''}>{screen}</main>
       {section !== 'capture' && (
         <nav className={`tabbar ${minimized ? 'minimized' : ''}`} aria-label="Tabs">
-          <div className="glass tabs">
-            <a href="#/" className={inLibrary ? 'on' : ''}>
-              <Icon name="quote" size={22} />
+          <div className="glass tabs" style={{ ['--tab' as string]: inLibrary ? 0 : inBooks ? 1 : -1 }}>
+            {(inLibrary || inBooks) && <span className="tab-indicator" aria-hidden />}
+            <a href="#/" className={inLibrary ? 'on' : ''} onClick={() => !inLibrary && haptic('tick')}>
+              <Icon name="quote" size={22} animate={inLibrary} />
               <span>Library</span>
             </a>
-            <a href="#/books" className={inBooks ? 'on' : ''}>
-              <Icon name="book" size={22} />
+            <a href="#/books" className={inBooks ? 'on' : ''} onClick={() => !inBooks && haptic('tick')}>
+              <Icon name="book" size={22} animate={inBooks} />
               <span>Books</span>
             </a>
           </div>

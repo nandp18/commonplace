@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { haptic, reducedMotion } from './motion'
 import { lineHeight, nearestWord, selectRange, type OcrWord, type Pt, type Range } from './selection'
 
 interface Props {
@@ -39,6 +40,8 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
   const pinch0 = useRef({ d: 1, mid: { x: 0, y: 0 }, s: 1, tx: 0, ty: 0 })
   const beforeDraw = useRef<Range | null>(null)
   const shimmer = useRef(0)
+  /** The finished stroke melting away as the highlight settles. */
+  const fading = useRef<{ pts: Pt[]; a: number } | null>(null)
   const live = useRef({ words, range, pendingStroke })
   live.current = { words, range, pendingStroke }
 
@@ -82,8 +85,14 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
     }
 
     const drawing = mode.current === 'draw'
-    const pts = drawing ? stroke.current : (live.current.pendingStroke ?? []).map((p) => ({ x: p.x / kk, y: p.y / kk }))
+    const fade = fading.current
+    const pts = drawing
+      ? stroke.current
+      : fade
+        ? fade.pts
+        : (live.current.pendingStroke ?? []).map((p) => ({ x: p.x / kk, y: p.y / kk }))
     if (pts.length > 1) {
+      ctx.globalAlpha = !drawing && fade ? fade.a : 1
       ctx.strokeStyle = INK
       ctx.lineWidth = words ? Math.max(8, (lineHeight(words) / kk) * 0.8) : 14 / s
       ctx.lineCap = ctx.lineJoin = 'round'
@@ -91,6 +100,7 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
       ctx.moveTo(pts[0].x, pts[0].y)
       for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y)
       ctx.stroke()
+      ctx.globalAlpha = 1
     }
     ctx.globalCompositeOperation = 'source-over'
 
@@ -232,7 +242,11 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
       redraw()
     } else if ((mode.current === 'start' || mode.current === 'end') && words && range) {
       const i = nearestWord(words, toPhoto(local(e)))
-      onRange(mode.current === 'start' ? [Math.min(i, range[1]), range[1]] : [range[0], Math.max(i, range[0])])
+      const next: Range = mode.current === 'start' ? [Math.min(i, range[1]), range[1]] : [range[0], Math.max(i, range[0])]
+      if (next[0] !== range[0] || next[1] !== range[1]) {
+        haptic('tick') // a tick per word, like iOS text selection
+        onRange(next)
+      }
     }
   }
 
@@ -245,7 +259,24 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
         onRange(beforeDraw.current) // a tap, not a gesture
       } else {
         onStroke(pts)
-        if (live.current.words) onRange(selectRange(live.current.words, pts))
+        const words = live.current.words
+        if (words) {
+          const r = selectRange(words, pts)
+          onRange(r)
+          if (r) haptic('tap')
+          // Let the raw stroke melt into the snapped highlight.
+          if (r && !reducedMotion()) {
+            const displayPts = pts.map((p) => ({ x: p.x / k(), y: p.y / k() }))
+            const t0 = performance.now()
+            const tick = (t: number) => {
+              const a = 1 - Math.min(1, (t - t0) / 280)
+              fading.current = a > 0 ? { pts: displayPts, a } : null
+              redraw()
+              if (a > 0) requestAnimationFrame(tick)
+            }
+            requestAnimationFrame(tick)
+          }
+        }
       }
     }
     if (pointers.current.size === 0) {

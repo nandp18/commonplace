@@ -136,12 +136,18 @@ main.full { padding: 0; }
 }
 .tabbar > * { pointer-events: auto; }
 .tabs { display: flex; padding: 4px; border-radius: 33px; height: 62px; transition: height 0.4s var(--spring); }
+.tab-indicator {
+  position: absolute; top: 4px; bottom: 4px; left: 4px; width: 88px; border-radius: 29px; z-index: 0;
+  background: rgba(60, 50, 25, 0.08);
+  transform: translateX(calc(var(--tab) * 88px)); transition: transform 0.5s var(--spring), width 0.4s var(--spring);
+}
+.tabs a { position: relative; z-index: 1; }
 .tabs a {
   width: 88px; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   font-size: 10.5px; font-weight: 600; letter-spacing: 0; color: var(--secondary);
   border-radius: 29px; transition: width 0.4s var(--spring), opacity 0.25s, background 0.3s, color 0.3s;
 }
-.tabs a.on { color: var(--ink); background: rgba(60, 50, 25, 0.08); }
+.tabs a.on { color: var(--ink); }
 .tabs a:active { transform: scale(0.95); }
 .capture-fab {
   width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
@@ -153,6 +159,7 @@ main.full { padding: 0; }
 .tabbar.minimized .tabs { height: 48px; }
 .tabbar.minimized .tabs a:not(.on) { width: 0; opacity: 0; }
 .tabbar.minimized .tabs a.on { width: 56px; }
+.tabbar.minimized .tab-indicator { width: 56px; transform: none; }
 .tabbar.minimized .tabs a span { display: none; }
 .tabbar.minimized .capture-fab { width: 48px; height: 48px; }
 
@@ -255,6 +262,26 @@ main.full { padding: 0; }
 .unsure { text-decoration: underline wavy rgba(181, 138, 53, 0.9); text-decoration-thickness: 1.5px; text-underline-offset: 5px; }
 
 /* Today */
+/* ── Deck: rediscover one quote at a time ── */
+.deck { position: relative; height: 340px; margin: 10px 0 40px; touch-action: pan-y; user-select: none; -webkit-user-select: none; animation: rise 0.6s var(--spring) backwards; }
+.deck-card {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  padding: 22px 22px 22px 18px; border-radius: 30px; color: inherit; overflow: hidden;
+  background: linear-gradient(170deg, #f8f5ec, var(--cream) 60%, #efe9db);
+  box-shadow: inset 0 0 0 0.5px rgba(60, 50, 25, 0.08), 0 18px 40px -24px rgba(60, 50, 25, 0.5);
+  transform-origin: 50% 100%; will-change: transform;
+  transition: transform 0.5s var(--spring);
+  -webkit-user-drag: none;
+}
+.deck-card.depth-1 { background: linear-gradient(170deg, #f1ece0, #e9e3d4); }
+.deck-card.depth-2 { background: linear-gradient(170deg, #ebe5d7, #e2dbca); }
+.deck-card.depth-1 > *, .deck-card.depth-2 > * { opacity: 0; transition: opacity 0.3s; }
+.deck-head { display: flex; justify-content: space-between; align-items: center; margin: 0 0 14px 4px; }
+.deck-head .label { margin: 0; }
+.deck-card .attribution { margin-top: auto; padding-top: 14px; }
+.quote-text.clamp-deck { display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
+.quote-text.gu.clamp-deck { -webkit-line-clamp: 6; }
+
 .today-card {
   display: block; margin: 10px 0 0; padding: 22px 22px 22px 18px; border-radius: 30px; color: inherit;
   background: linear-gradient(170deg, #f8f5ec, var(--cream) 60%, #efe9db);
@@ -271,12 +298,12 @@ main.full { padding: 0; }
 .quote-list { display: flex; flex-direction: column; }
 .quote-card { display: block; color: inherit; padding: 18px 0; transition: opacity 0.2s; border-radius: 14px; }
 .quote-card + .quote-card { border-top: 0.5px solid var(--line); }
-.quote-card:active { opacity: 0.55; }
+.quote-card.in:active { transform: scale(0.985); opacity: 0.75; transition-duration: 0.12s; }
 .quote-card-note { font-size: 15px; line-height: 1.4; color: var(--secondary); margin: 8px 0 0 0.5em; font-style: italic; }
 .quote-card-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 9px 0 0 0.5em; }
 .quote-card-meta:empty { display: none; }
 .meta-book { font: 600 14px/1.3 var(--serif); letter-spacing: -0.005em; }
-.quote-card.fresh { animation: fresh 2.6s ease-out both; }
+.quote-card.fresh { animation: fresh-in 0.7s var(--spring) both, fresh 2.6s ease-out both; }
 
 /* Quote detail */
 .quote-hero { padding: 14px 0 10px; }
@@ -328,7 +355,16 @@ main.full { padding: 0; }
     linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.25)),
     var(--cloth);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 14px 28px -12px rgba(0, 0, 0, 0.45);
+  transform: perspective(700px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 0.6s var(--spring), box-shadow 0.3s;
 }
+/* Light catching the cloth where your finger is. */
+.cover::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  background: radial-gradient(circle at var(--gx, 50%) var(--gy, 30%), rgba(255, 255, 255, 0.22), transparent 55%);
+}
+.cover-cell:hover .cover::after, .cover-cell:active .cover::after { opacity: 1; }
+.cover-cell:active .cover { transition-duration: 0.12s; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 18px -10px rgba(0, 0, 0, 0.5); }
 /* Gilt frame stamped into the cloth. */
 .cover::before {
   content: ''; position: absolute; inset: 9px 9px 9px 14px; border: 1px solid rgba(241, 228, 196, 0.38); border-radius: 2px; pointer-events: none;
@@ -377,7 +413,9 @@ main.full { padding: 0; }
 .sheet.tall { height: calc(100dvh - var(--top) - 48px); }
 .sheet-root.shown .sheet { transform: none; }
 .sheet-root.shown .sheet-backdrop { opacity: 1; }
-.sheet-grabber { width: 36px; height: 5px; border-radius: 3px; background: rgba(60, 50, 25, 0.18); margin: 8px auto 0; flex: none; }
+.sheet-drag { flex: none; padding: 9px 0 7px; cursor: grab; touch-action: none; }
+.sheet-grabber { width: 36px; height: 5px; border-radius: 3px; background: rgba(60, 50, 25, 0.18); margin: 0 auto; }
+.sheet-nav { touch-action: none; }
 .sheet-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 6px 14px 2px; min-height: 58px; flex: none; }
 .sheet-title { font-weight: 600; font-size: 17px; }
 .sheet-body { overflow-y: auto; padding: 6px 24px 24px; overscroll-behavior: contain; }
@@ -477,6 +515,29 @@ main.full { padding: 0; }
   100% { transform: scaleX(1); opacity: 0; }
 }
 @keyframes fresh { 0% { background: rgba(181, 138, 53, 0.14); } 100% { background: transparent; } }
+@keyframes fresh-in { from { opacity: 0; transform: translateY(-16px) scale(0.98); } }
+
+/* Scroll reveal, staggered for the first screenful. */
+.reveal { opacity: 0; transform: translateY(16px); }
+.reveal.instant { transition: none !important; }
+.reveal.in { opacity: 1; transform: none; transition: opacity 0.6s ease var(--d, 0ms), transform 0.7s var(--spring) var(--d, 0ms); }
+
+/* Dot-matrix icons assemble from the center out. */
+.icon.assemble .dot {
+  transform-box: fill-box; transform-origin: center;
+  animation: dot-in 0.45s var(--spring) both; animation-delay: calc(var(--i, 0) * 16ms);
+}
+@keyframes dot-in { from { transform: scale(0); opacity: 0; } }
+
+/* A passage arriving word by word. */
+.revealing .w { display: inline-block; animation: word-in 0.55s ease both; animation-delay: calc(var(--w) * 24ms + 160ms); }
+@keyframes word-in { from { opacity: 0; filter: blur(5px); transform: translateY(3px); } }
+
+.rise-in { animation: rise 0.55s var(--spring) 0.12s both; }
+
+/* The capture photo arrives like a print being set down. */
+.stage { animation: set-down 0.6s var(--spring) both; }
+@keyframes set-down { from { opacity: 0; transform: translateY(18px) scale(0.96) rotate(-1deg); } }
 
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.42s; animation-timing-function: var(--spring); }
 html[data-nav='push']::view-transition-old(root) { animation-name: vt-out-left; }
@@ -485,6 +546,12 @@ html[data-nav='pop']::view-transition-old(root) { animation-name: vt-out-right; 
 html[data-nav='pop']::view-transition-new(root) { animation-name: vt-in-left; }
 html[data-nav='fade']::view-transition-old(root), html[data-nav='fade']::view-transition-new(root) { animation-duration: 0.2s; }
 ::view-transition-group(tabbar) { animation: none; }
+html[data-nav='zoom']::view-transition-old(root) { animation: vt-fade-out 0.25s ease both; }
+html[data-nav='zoom']::view-transition-new(root) { animation: vt-fade-in 0.4s ease 0.08s both; }
+::view-transition-group(morph-quote), ::view-transition-group(morph-cover) { animation-duration: 0.55s; animation-timing-function: var(--spring); }
+::view-transition-old(morph-quote), ::view-transition-new(morph-quote) { animation-duration: 0.4s; }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; transform: translateY(8px); } }
 @keyframes vt-out-left { to { transform: translateX(-28%); opacity: 0.6; } }
 @keyframes vt-in-right { from { transform: translateX(100%); box-shadow: -10px 0 30px rgba(0, 0, 0, 0.12); } }
 @keyframes vt-out-right { to { transform: translateX(100%); box-shadow: -10px 0 30px rgba(0, 0, 0, 0.12); } }

@@ -166,15 +166,35 @@ const parsed = Object.fromEntries(
   }),
 ) as Record<IconName, { cols: number; rows: number; dots: [number, number][] }>
 
-export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+/**
+ * `animate` makes the dots assemble from the center outward. Changing `name`
+ * remounts the glyph, so swapping icons (copy → check) replays it.
+ */
+export function Icon({ name, size = 20, animate = false }: { name: IconName; size?: number; animate?: boolean }) {
   const g = parsed[name]
   const n = Math.max(g.cols, g.rows, 7)
   // Square viewBox so every glyph sits on the same optical grid, centered.
   const ox = (n - g.cols) / 2, oy = (n - g.rows) / 2
+  const cx = g.cols / 2 - 0.5, cy = g.rows / 2 - 0.5
   return (
-    <svg className="icon" width={size} height={size} viewBox={`0 0 ${n} ${n}`} fill="currentColor" aria-hidden>
+    <svg
+      key={name}
+      className={`icon ${animate ? 'assemble' : ''}`}
+      width={size}
+      height={size}
+      viewBox={`0 0 ${n} ${n}`}
+      fill="currentColor"
+      aria-hidden
+    >
       {g.dots.map(([x, y]) => (
-        <circle key={`${x},${y}`} cx={x + ox + 0.5} cy={y + oy + 0.5} r={0.4} />
+        <circle
+          key={`${x},${y}`}
+          className="dot"
+          cx={x + ox + 0.5}
+          cy={y + oy + 0.5}
+          r={0.4}
+          style={animate ? ({ '--i': Math.round(Math.hypot(x - cx, y - cy) * 2) } as React.CSSProperties) : undefined}
+        />
       ))}
     </svg>
   )

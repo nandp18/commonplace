@@ -57,9 +57,16 @@ Fallbacks: if no words are found where I pointed, only the marked region is OCR'
 - **Home / Library.** Quote of the day at the top, then recent quotes.
 - **Full-text search** across quote text, notes, tags, book titles, and authors, in both English and Gujarati, filtered live as I type.
 - **Browse by book.** A grid of generated cloth-bound covers with quote counts. Tapping a book shows its quotes ordered by page, with page numbers in the margin. Quotes with no book are grouped under **Loose Pages**.
-- **Quote of the day.** Picked deterministically per date, so it stays the same all day, plus a **Shuffle** button.
+- **Rediscover deck.** A swipeable stack of cards at the top of the Library. Today's quote is on top (it changes at midnight), followed by a day-seeded shuffle of up to 30 others. Flick a card away to see the next; tap one to open it.
 - **Edit / delete** any quote.
 - **Export** to Markdown (grouped by book) and CSV (UTF-8 with BOM so Gujarati opens correctly in Excel and Sheets).
+
+### Motion & feedback
+- **Library:** list items rise in as they scroll into view. Tapping a quote or cover **grows it into its page** (View Transitions shared elements), and the tab selection pill slides between tabs.
+- **Capture:** haptic ticks as the selection handles snap from word to word, the finger stroke melts into the snapped highlight, and the passage fades in word by word on the filing sheet.
+- **Details:** dot-matrix icons assemble from the center out (active tab, copy → ✓, saved), sheets drag down to dismiss, and covers tilt under your finger.
+- **Haptics:** Vibration API on Android. On iOS Safari 18+, toggling a hidden native switch plays the system tick.
+- Everything respects Reduce Motion.
 
 ## 6. Technical approach
 

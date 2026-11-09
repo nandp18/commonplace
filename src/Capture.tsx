@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CaptureButton, EditableQuote, go, QuoteFields, Segmented, Sheet } from './components'
+import { haptic } from './motion'
 import { PageArt } from './screens'
 import { formatSelection } from './format'
 import { Icon } from './icons'
@@ -131,6 +132,7 @@ export function Capture({ store }: { store: Store }) {
         tags: [],
         lang,
       })
+      haptic('success')
       setSaved({ id: q.id, uncertain })
     } finally {
       setSaving(false)
@@ -203,18 +205,24 @@ export function Capture({ store }: { store: Store }) {
             <div className="filing-head">
               <span className="filing-label">Quote</span>
               <span className="saved-tag">
-                <Icon name="check" size={12} /> Saved
+                <Icon name="check" size={12} animate /> Saved
               </span>
             </div>
             <div className="saved-quote">
-              <EditableQuote store={store} quote={savedQuote} uncertain={saved?.uncertain} />
+              <EditableQuote store={store} quote={savedQuote} uncertain={saved?.uncertain} reveal />
             </div>
             {saved && saved.uncertain.length > 0 && (
               <p className="footnote">Wavy words may be misread — tap the quote to fix.</p>
             )}
             <QuoteFields store={store} quote={savedQuote} />
-            <button className="ink-button wide" onClick={() => go(`/?new=${saved?.id}`)}>
-              <Icon name="sparkle" size={18} /> File quote
+            <button
+              className="ink-button wide"
+              onClick={() => {
+                haptic('success')
+                go(`/?new=${saved?.id}`)
+              }}
+            >
+              <Icon name="sparkle" size={18} animate /> File quote
             </button>
             <div className="filing-secondary">
               <button
