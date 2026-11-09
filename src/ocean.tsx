@@ -183,7 +183,8 @@ export function Ocean({ store }: { store: Store }) {
   const phys = useRef({
     x: savedDepth,
     v: 0, // px/s
-    mode: 'idle' as 'idle' | 'drag' | 'spring' | 'wheel',
+    mode: 'idle' as 'idle' | 'drag' | 'spring' | 'wheel' | 'ascend',
+    ascent: { from: 0, start: 0, dur: 1 },
     target: savedDepth,
     targetK: -1,
     raw: savedDepth,
@@ -196,6 +197,15 @@ export function Ocean({ store }: { store: Store }) {
   /** Tapping the moon fills it for a while. */
   const moonBoost = useRef(0)
   const moonAt = (w: number, top: number) => ({ x: w * 0.74, y: SURFACE * 0.4 - top * 0.6, r: 30 })
+
+  /** Rise all the way back to the surface: eased, with the time scaled to the depth. */
+  const surface = () => {
+    const p = phys.current
+    if (p.x < 4) return
+    const dur = Math.min(1.8, Math.max(0.7, 0.7 + p.x / 6000))
+    Object.assign(p, { mode: 'ascend', ascent: { from: p.x, start: performance.now(), dur } })
+    haptic('tap')
+  }
 
   const burst = (x: number, wy: number, count: number) => {
     for (let i = 0; i < count; i++)
@@ -326,6 +336,7 @@ export function Ocean({ store }: { store: Store }) {
       const p = phys.current
       const h = window.innerHeight
       if (e.key === 'Escape') location.hash = '/'
+      if (e.key === 'Home') return surface()
       if (!['ArrowDown', 'ArrowUp', ' '].includes(e.key)) return
       e.preventDefault()
       const k = Math.max(-1, nearestSnap(p.target, h).k + (e.key === 'ArrowUp' ? -1 : 1))
@@ -395,6 +406,17 @@ export function Ocean({ store }: { store: Store }) {
             p.landed = true
             haptic('tap') // click into place
           }
+        }
+      } else if (p.mode === 'ascend') {
+        const { from, start, dur } = p.ascent
+        const u = Math.min(1, (now - start) / 1000 / dur)
+        const eased = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2 // ease in-out
+        const x = from * (1 - eased)
+        p.v = (x - p.x) / Math.max(dt, 0.001) // for streaks and bubbles
+        p.x = x
+        if (u >= 1) {
+          Object.assign(p, { x: 0, v: 0, mode: 'idle', target: 0, landed: true })
+          haptic('success')
         }
       } else if (p.mode === 'idle' && p.x < 0) {
         p.x *= 0.8
@@ -594,7 +616,7 @@ export function Ocean({ store }: { store: Store }) {
 
       // ── Bubbles: a few always rising; more when you dive fast; a burst where you tap ──
       if (!still && top + h > SURFACE) {
-        const rate = 0.8 + (p.v > 500 ? p.v / 400 : 0)
+        const rate = 0.8 + (Math.abs(p.v) > 500 ? Math.abs(p.v) / 400 : 0)
         if (Math.random() < rate * dt) bubbles.current.push({ x: Math.random() * w, y: top + h + 10, r: 1.2 + Math.random() * 2.2, vy: 30 + Math.random() * 40, ph: Math.random() * 6 })
       }
       bubbles.current = bubbles.current.filter((b) => {
@@ -765,6 +787,7 @@ export function Ocean({ store }: { store: Store }) {
       const sky = el.querySelector<HTMLElement>('.ocean-sky')
       if (sky) sky.style.transform = `translate3d(0, ${-top}px, 0)`
 
+      el.dataset.deep = top > 400 ? '1' : ''
       const label = `${Math.round(m).toLocaleString()} m · ${zoneAt(m)}`
       if (depthLabel.current && depthLabel.current.textContent !== label) depthLabel.current.textContent = label
     }
@@ -857,9 +880,12 @@ export function Ocean({ store }: { store: Store }) {
 
       <header className="ocean-bar">
         <GlassButton icon="close" ariaLabel="Back to library" href="#/" />
-        <span className="depth glass" ref={depthLabel}>
-          {`${Math.round(Math.max(0, (savedDepth + window.innerHeight * FOCUS - SURFACE) * METERS))} m`}
-        </span>
+        <button className="depth glass" onClick={surface} aria-label="Rise to the surface">
+          <span className="depth-up" aria-hidden>
+            ↑
+          </span>
+          <span ref={depthLabel}>{`${Math.round(Math.max(0, (savedDepth + window.innerHeight * FOCUS - SURFACE) * METERS))} m`}</span>
+        </button>
       </header>
     </div>
   )
