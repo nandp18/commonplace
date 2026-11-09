@@ -372,37 +372,6 @@ main.full { padding: 0; }
 .chip:active { transform: scale(0.94); }
 .chip-count { font: 11px var(--mono); opacity: 0.55; margin-left: 3px; }
 
-/* Wheel */
-.wheel { margin-top: 14px; }
-.wheel-preview {
-  display: block; min-height: 300px; padding: 22px 22px 22px 18px; border-radius: 30px; color: inherit;
-  background: linear-gradient(170deg, #f8f5ec, var(--cream) 60%, #efe9db);
-  box-shadow: inset 0 0 0 0.5px rgba(60, 50, 25, 0.08), 0 18px 40px -26px rgba(60, 50, 25, 0.45);
-  animation: swap 0.35s ease both;
-}
-.wheel-preview .label { margin: 0 0 14px 4px; }
-.quote-text.clamp-wheel { display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
-@keyframes swap { from { opacity: 0.25; transform: translateY(6px); } }
-.wheel-frame { position: relative; margin: 14px -22px 0; }
-.wheel-lens {
-  position: absolute; left: 14px; right: 14px; top: 50%; height: 50px; transform: translateY(-50%);
-  border-radius: 16px; background: var(--cream); pointer-events: none;
-}
-.wheel-drum {
-  position: relative; overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory; scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
-  mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
-}
-.wheel-drum::-webkit-scrollbar { display: none; }
-.wheel-row {
-  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 0 30px; scroll-snap-align: center; transform-origin: 50% 50%; will-change: transform, opacity;
-}
-.wheel-words { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.2s; }
-.wheel-words.gu { font-size: 18px; letter-spacing: 0; }
-.wheel-row.focus .wheel-words { color: var(--text); }
-.wheel-book { font: 11px var(--mono); color: var(--tertiary); letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 36%; }
-
 /* ───────────── Books ───────────── */
 
 .cover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 30px 20px; margin: 14px 0 8px; }

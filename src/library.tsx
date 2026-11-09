@@ -1,20 +1,18 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BookCover, CaptureButton, GlassButton, Page, QuoteCard, QuoteText } from './components'
+import { useMemo, useState } from 'react'
+import { BookCover, CaptureButton, GlassButton, Page, QuoteCard } from './components'
 import { QuoteDeck } from './deck'
-import { isGujarati } from './format'
 import { Icon } from './icons'
-import { haptic, reducedMotion } from './motion'
+import { haptic } from './motion'
 import { PageArt } from './screens'
 import type { Store } from './store'
-import type { Book, Quote } from './types'
+import type { Quote } from './types'
 import { byPage, quoteOfTheDay, search } from './util'
 
-type View = 'timeline' | 'books' | 'tags' | 'wheel'
+type View = 'timeline' | 'books' | 'tags'
 const VIEWS: { value: View; label: string }[] = [
   { value: 'timeline', label: 'Timeline' },
   { value: 'books', label: 'By book' },
   { value: 'tags', label: 'Tags' },
-  { value: 'wheel', label: 'Wheel' },
 ]
 const VIEW_KEY = 'commonplace.view'
 
@@ -52,7 +50,10 @@ function TextTabs<T extends string>({ value, options, onChange }: { value: T; op
 export function Library({ store, freshId }: { store: Store; freshId?: string }) {
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const [view, setViewState] = useState<View>(() => (localStorage.getItem(VIEW_KEY) as View) || 'timeline')
+  const [view, setViewState] = useState<View>(() => {
+    const saved = localStorage.getItem(VIEW_KEY) as View
+    return VIEWS.some((v) => v.value === saved) ? saved : 'timeline'
+  })
   const setView = (v: View) => {
     setViewState(v)
     localStorage.setItem(VIEW_KEY, v)
@@ -122,7 +123,6 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
             {view === 'timeline' && <Timeline store={store} freshId={freshId} />}
             {view === 'books' && <ByBook store={store} />}
             {view === 'tags' && <Tags store={store} />}
-            {view === 'wheel' && <Wheel quotes={store.quotes} bookOf={bookOf} />}
           </div>
         </>
       )}
@@ -249,104 +249,5 @@ function Tags({ store }: { store: Store }) {
         ))}
       </div>
     </>
-  )
-}
-
-/* ───────────── Wheel: a picker drum of quotes ─────────────
-   Rows sit on a cylinder: the focused one large and sharp at the center,
-   the rest curling away. The panel above shows the focused quote in full. */
-
-const ROW = 50
-const VISIBLE = 7
-
-const firstWords = (s: string) => {
-  const words = s.replace(/^[…“"]+/, '').split(/\s+/)
-  return words.slice(0, 7).join(' ') + (words.length > 7 ? '…' : '')
-}
-
-export function Wheel({ quotes, bookOf }: { quotes: Quote[]; bookOf: (id?: string) => Book | undefined }) {
-  const drum = useRef<HTMLDivElement>(null)
-  const rows = useRef<(HTMLButtonElement | null)[]>([])
-  const [focused, setFocused] = useState(0)
-  const focusRef = useRef(0)
-  const raf = useRef(0)
-
-  const update = () => {
-    const el = drum.current
-    if (!el) return
-    const center = el.scrollTop + el.clientHeight / 2
-    const pad = (el.clientHeight - ROW) / 2
-    const flat = reducedMotion()
-    rows.current.forEach((row, i) => {
-      if (!row) return
-      const o = (pad + i * ROW + ROW / 2 - center) / ROW // rows from center
-      const a = Math.min(Math.abs(o), 4)
-      row.style.transform = flat
-        ? ''
-        : `perspective(600px) rotateX(${-Math.sign(o) * a * 19}deg) scale(${1 - a * 0.07})`
-      row.style.opacity = String(Math.max(0, 1 - a * 0.26))
-      row.style.filter = flat || a < 0.5 ? '' : `blur(${(a - 0.5) * 0.7}px)`
-      row.classList.toggle('focus', Math.abs(o) < 0.5)
-    })
-    const i = Math.max(0, Math.min(quotes.length - 1, Math.round(el.scrollTop / ROW)))
-    if (i !== focusRef.current) {
-      focusRef.current = i
-      setFocused(i)
-      haptic('tick')
-    }
-  }
-
-  useLayoutEffect(update, [quotes])
-  useEffect(() => () => cancelAnimationFrame(raf.current), [])
-
-  if (quotes.length === 0) return null
-  const q = quotes[Math.min(focused, quotes.length - 1)]
-  const book = bookOf(q.bookId)
-
-  return (
-    <div className="wheel">
-      <a className="wheel-preview" href={`#/quote/${q.id}`} key={q.id}>
-        <span className="label">
-          {String(focused + 1).padStart(2, '0')} / {String(quotes.length).padStart(2, '0')}
-        </span>
-        <QuoteText text={q.text} className="large clamp-wheel" />
-        {(book || q.page) && (
-          <div className="attribution">
-            {book && <span className="attr-title">{book.title}</span>}
-            <span className="attr-mono">{[book?.author, q.page && `p.${q.page}`].filter(Boolean).join(' · ')}</span>
-          </div>
-        )}
-      </a>
-      <div className="wheel-frame">
-        <div className="wheel-lens" aria-hidden />
-        <div
-          ref={drum}
-          className="wheel-drum"
-          style={{ height: ROW * VISIBLE }}
-          onScroll={() => {
-            cancelAnimationFrame(raf.current)
-            raf.current = requestAnimationFrame(update)
-          }}
-        >
-          <div style={{ height: (ROW * VISIBLE - ROW) / 2 }} aria-hidden />
-          {quotes.map((x, i) => (
-            <button
-              key={x.id}
-              ref={(el) => void (rows.current[i] = el)}
-              className="wheel-row"
-              style={{ height: ROW }}
-              onClick={() => {
-                if (i === focused) location.hash = `/quote/${x.id}`
-                else drum.current?.scrollTo({ top: i * ROW, behavior: 'smooth' })
-              }}
-            >
-              <span className={`wheel-words ${isGujarati(x.text) ? 'gu' : ''}`}>{firstWords(x.text)}</span>
-              <span className="wheel-book">{bookOf(x.bookId)?.title ?? 'Loose'}</span>
-            </button>
-          ))}
-          <div style={{ height: (ROW * VISIBLE - ROW) / 2 }} aria-hidden />
-        </div>
-      </div>
-    </div>
   )
 }
