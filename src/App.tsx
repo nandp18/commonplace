@@ -36,9 +36,27 @@ function useRoute() {
   return { hash, parts: path.split('/').filter(Boolean), params: new URLSearchParams(query) }
 }
 
+/** iOS 26 tab bar: shrinks while you scroll down to read, comes back when you scroll up. */
+function useMinimizeOnScroll() {
+  const [min, setMin] = useState(false)
+  useEffect(() => {
+    let last = window.scrollY
+    const on = () => {
+      const y = window.scrollY
+      if (y < 60 || y < last - 8) setMin(false)
+      else if (y > last + 8) setMin(true)
+      if (Math.abs(y - last) > 8) last = y
+    }
+    window.addEventListener('scroll', on, { passive: true })
+    return () => window.removeEventListener('scroll', on)
+  }, [])
+  return min
+}
+
 export function App() {
   const store = useStore()
   const { hash, parts, params } = useRoute()
+  const minimized = useMinimizeOnScroll()
   const [section, id] = parts
 
   let screen
@@ -72,7 +90,7 @@ export function App() {
     <>
       <main className={section === 'capture' ? 'full' : ''}>{screen}</main>
       {section !== 'capture' && (
-        <nav className="tabbar" aria-label="Tabs">
+        <nav className={`tabbar ${minimized ? 'minimized' : ''}`} aria-label="Tabs">
           <div className="glass tabs">
             <a href="#/" className={inLibrary ? 'on' : ''}>
               <Icon name="quote" size={22} />

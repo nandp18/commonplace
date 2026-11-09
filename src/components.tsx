@@ -13,7 +13,58 @@ export const go = (path: string) => {
 
 /* ───────────── Navigation ───────────── */
 
-/** iOS-style page: large title that collapses into a translucent inline bar on scroll. */
+/**
+ * iOS 26 bar button: a Liquid Glass circle (icon) or capsule (label).
+ * `prominent` is the tinted glass used for the primary action, e.g. Done.
+ */
+export function GlassButton({
+  icon,
+  label,
+  prominent,
+  destructive,
+  href,
+  onClick,
+  disabled,
+  ariaLabel,
+}: {
+  icon?: IconName
+  label?: string
+  prominent?: boolean
+  destructive?: boolean
+  href?: string
+  onClick?: () => void
+  disabled?: boolean
+  ariaLabel?: string
+}) {
+  const cls = `glass-button glass ${label ? 'capsule' : 'circle'} ${prominent ? 'prominent-glass' : ''} ${destructive ? 'destructive' : ''}`
+  const body = (
+    <>
+      {icon && <Icon name={icon} size={label ? 18 : 21} />}
+      {label && <span>{label}</span>}
+    </>
+  )
+  if (href)
+    return (
+      <a className={cls} href={href} aria-label={ariaLabel ?? label}>
+        {body}
+      </a>
+    )
+  return (
+    <button type="button" className={cls} onClick={onClick} disabled={disabled} aria-label={ariaLabel ?? label}>
+      {body}
+    </button>
+  )
+}
+
+/** Several bar buttons sharing one piece of glass, as iOS 26 groups them. */
+export function GlassGroup({ children }: { children: ReactNode }) {
+  return <div className="glass-group glass">{children}</div>
+}
+
+/**
+ * iOS 26 page: a transparent navigation bar with floating glass buttons. The large title
+ * scrolls away and the inline title fades in over a soft scroll-edge blur.
+ */
 export function Page({
   title,
   large = true,
@@ -23,7 +74,7 @@ export function Page({
 }: {
   title: string
   large?: boolean
-  back?: { href: string; label: string }
+  back?: string
   trailing?: ReactNode
   children: ReactNode
 }) {
@@ -31,7 +82,7 @@ export function Page({
   const [collapsed, setCollapsed] = useState(!large)
   useEffect(() => {
     if (!large || !sentinel.current) return
-    const io = new IntersectionObserver(([e]) => setCollapsed(!e.isIntersecting), { rootMargin: '-52px 0px 0px 0px' })
+    const io = new IntersectionObserver(([e]) => setCollapsed(!e.isIntersecting), { rootMargin: '-56px 0px 0px 0px' })
     io.observe(sentinel.current)
     return () => io.disconnect()
   }, [large])
@@ -39,14 +90,7 @@ export function Page({
   return (
     <div className="page">
       <header className={`navbar ${collapsed ? 'collapsed' : ''}`}>
-        <div className="navbar-side">
-          {back && (
-            <a className="nav-back" href={back.href}>
-              <Icon name="back" size={22} />
-              <span>{back.label}</span>
-            </a>
-          )}
-        </div>
+        <div className="navbar-side">{back && <GlassButton icon="back" href={back} ariaLabel="Back" />}</div>
         <div className="navbar-title">{title}</div>
         <div className="navbar-side end">{trailing}</div>
       </header>
@@ -295,7 +339,7 @@ export function Sheet({
   return createPortal(
     <div className={`sheet-root ${shown ? 'shown' : ''}`}>
       <div className="sheet-backdrop" onClick={onClose} />
-      <div className={`sheet ${tall ? 'tall' : ''}`} role="dialog" aria-modal>
+      <div className={`sheet glass-sheet ${tall ? 'tall' : ''}`} role="dialog" aria-modal>
         <div className="sheet-grabber" />
         {(title || leading || trailing) && (
           <div className="sheet-nav">
@@ -349,11 +393,7 @@ export function BookPicker({
       onClose={onClose}
       title="Book"
       tall
-      trailing={
-        <button className="nav-button bold" onClick={onClose}>
-          Done
-        </button>
-      }
+      leading={<GlassButton icon="close" onClick={onClose} ariaLabel="Close" />}
     >
       <div className="search-field">
         <Icon name="search" size={17} />

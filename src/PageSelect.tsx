@@ -5,7 +5,10 @@ interface Props {
   src: string
   words: OcrWord[] | null
   reading: boolean
+  status: string
   progress: number
+  /** A gesture made before the words were ready; shown until it can snap. */
+  pendingStroke: Pt[] | null
   range: Range | null
   onImage: (img: HTMLImageElement) => void
   onRange: (r: Range | null) => void
@@ -23,7 +26,7 @@ type Mode = 'none' | 'draw' | 'pinch' | 'start' | 'end'
  * The photo, with a highlighter. Draw any rough loop or swipe; the selection snaps to
  * whole words. Drag the handles to adjust. Pinch to zoom in on small print.
  */
-export function PageSelect({ src, words, reading, progress, range, onImage, onRange, onStroke }: Props) {
+export function PageSelect({ src, words, reading, status, progress, pendingStroke, range, onImage, onRange, onStroke }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
   const img = useRef<HTMLImageElement>(null)
@@ -36,8 +39,8 @@ export function PageSelect({ src, words, reading, progress, range, onImage, onRa
   const pinch0 = useRef({ d: 1, mid: { x: 0, y: 0 }, s: 1, tx: 0, ty: 0 })
   const beforeDraw = useRef<Range | null>(null)
   const shimmer = useRef(0)
-  const live = useRef({ words, range })
-  live.current = { words, range }
+  const live = useRef({ words, range, pendingStroke })
+  live.current = { words, range, pendingStroke }
 
   /** Photo pixels per display pixel. */
   const k = () => (img.current ? img.current.naturalWidth / img.current.clientWidth : 1)
@@ -78,8 +81,9 @@ export function PageSelect({ src, words, reading, progress, range, onImage, onRa
       }
     }
 
-    const pts = stroke.current
-    if (mode.current === 'draw' && pts.length > 1) {
+    const drawing = mode.current === 'draw'
+    const pts = drawing ? stroke.current : (live.current.pendingStroke ?? []).map((p) => ({ x: p.x / kk, y: p.y / kk }))
+    if (pts.length > 1) {
       ctx.strokeStyle = INK
       ctx.lineWidth = words ? Math.max(8, (lineHeight(words) / kk) * 0.8) : 14 / s
       ctx.lineCap = ctx.lineJoin = 'round'
@@ -128,7 +132,7 @@ export function PageSelect({ src, words, reading, progress, range, onImage, onRa
     return () => window.removeEventListener('resize', fit)
   }, [fit])
 
-  useEffect(redraw, [range, redraw])
+  useEffect(redraw, [range, pendingStroke, redraw])
 
   // Shimmer once when words arrive.
   useEffect(() => {
@@ -284,7 +288,8 @@ export function PageSelect({ src, words, reading, progress, range, onImage, onRa
         )}
         {reading && (
           <div className="stage-status">
-            <span className="spinner" /> Reading page{progress > 0.02 ? ` · ${Math.round(progress * 100)}%` : '…'}
+            <span className="spinner" /> {status}
+            {progress > 0.02 ? ` · ${Math.round(progress * 100)}%` : '…'}
           </div>
         )}
       </div>

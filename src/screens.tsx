@@ -4,6 +4,8 @@ import {
   BookCover,
   CaptureButton,
   EditableQuote,
+  GlassButton,
+  GlassGroup,
   go,
   Group,
   LANGS,
@@ -68,9 +70,10 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
     <Page
       title="Library"
       trailing={
-        <a className="nav-icon" href="#/settings" aria-label="Settings">
-          <SyncGlyph store={store} />
-        </a>
+        <span className="badge-wrap">
+          <GlassButton icon="settings" href="#/settings" ariaLabel="Settings" />
+          <SyncBadge store={store} />
+        </span>
       }
     >
       <div className="search-field">
@@ -95,7 +98,7 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
             <section className="today">
               <div className="today-head">
                 <span className="today-eyebrow">{featured.id === daily?.id ? today() : 'Rediscovered'}</span>
-                <button className="nav-icon" onClick={shuffle} aria-label="Shuffle">
+                <button className="text-icon" onClick={shuffle} aria-label="Shuffle">
                   <Icon name="shuffle" size={20} />
                 </button>
               </div>
@@ -117,14 +120,9 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
   )
 }
 
-function SyncGlyph({ store }: { store: Store }) {
-  const s = store.syncState
-  return (
-    <span className="sync-glyph">
-      <Icon name="settings" size={22} />
-      {s.kind !== 'ok' && <span className={`sync-badge ${s.kind}`} />}
-    </span>
-  )
+function SyncBadge({ store }: { store: Store }) {
+  const k = store.syncState.kind
+  return k === 'ok' ? null : <span className={`sync-badge ${k}`} />
 }
 
 export function Shelf({ store }: { store: Store }) {
@@ -168,19 +166,15 @@ export function BookView({ store, id }: { store: Store; id: string }) {
     .filter((q) => (isLoose ? !q.bookId || !store.bookMap.has(q.bookId) : q.bookId === id))
     .sort(byPage)
 
-  if (!isLoose && !book) return <Page title="Book" back={{ href: '#/books', label: 'Books' }}>{null}</Page>
+  if (!isLoose && !book) return <Page title="Book" back="#/books">{null}</Page>
 
   return (
     <Page
       title={book?.title ?? 'Loose Pages'}
       large={false}
-      back={{ href: '#/books', label: 'Books' }}
+      back="#/books"
       trailing={
-        book && (
-          <button className="nav-button" onClick={() => setEditing(!editing)}>
-            {editing ? 'Cancel' : 'Edit'}
-          </button>
-        )
+        book && <GlassButton label={editing ? 'Cancel' : 'Edit'} onClick={() => setEditing(!editing)} />
       }
     >
       {book && (
@@ -229,31 +223,36 @@ export function BookView({ store, id }: { store: Store; id: string }) {
 export function QuoteView({ store, id }: { store: Store; id: string }) {
   const quote = store.quotes.find((q) => q.id === id)
   const [copied, setCopied] = useState(false)
-  if (!quote) return <Page title="" large={false} back={{ href: '#/', label: 'Library' }}>{null}</Page>
+  if (!quote) return <Page title="" large={false} back="#/">{null}</Page>
   const book = quote.bookId ? store.bookMap.get(quote.bookId) : undefined
   const shareText = `${quote.text}\n\n— ${attribution(book, quote.page) || 'Commonplace'}`
+  const copy = async () => {
+    await navigator.clipboard?.writeText(shareText)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   return (
-    <Page title="" large={false} back={{ href: '#/', label: 'Library' }}>
+    <Page
+      title={book?.title ?? ''}
+      large={false}
+      back="#/"
+      trailing={
+        <GlassGroup>
+          {'share' in navigator && (
+            <GlassButton icon="share" ariaLabel="Share" onClick={() => navigator.share({ text: shareText }).catch(() => {})} />
+          )}
+          <GlassButton icon={copied ? 'check' : 'copy'} ariaLabel="Copy" onClick={copy} />
+        </GlassGroup>
+      }
+    >
       <article className="quote-hero">
         <EditableQuote store={store} quote={quote} large />
         {book && <p className="quote-hero-attr">{attribution(book, quote.page)}</p>}
       </article>
       <QuoteDetails store={store} quote={quote} />
       <Group>
-        {'share' in navigator && <Row icon="share" label="Share" tint onClick={() => navigator.share({ text: shareText }).catch(() => {})} />}
         <Row
-          icon="copy"
-          label={copied ? 'Copied' : 'Copy'}
-          tint
-          onClick={async () => {
-            await navigator.clipboard?.writeText(shareText)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
-          }}
-        />
-        <Row
-          icon="trash"
           label="Delete Quote"
           destructive
           onClick={async () => {
@@ -287,12 +286,8 @@ export function NewQuote({ store }: { store: Store }) {
     <Page
       title="New Quote"
       large={false}
-      back={{ href: '#/', label: 'Library' }}
-      trailing={
-        <button className="nav-button bold" disabled={!text.trim()} onClick={save}>
-          Save
-        </button>
-      }
+      back="#/"
+      trailing={<GlassButton icon="check" prominent ariaLabel="Save" disabled={!text.trim()} onClick={save} />}
     >
       <textarea
         className="quote-text quote-editor large compose"
@@ -333,7 +328,7 @@ export function Settings({ store }: { store: Store }) {
           : s.message
 
   return (
-    <Page title="Settings" back={{ href: '#/', label: 'Library' }}>
+    <Page title="Settings" back="#/">
       <Group
         header="Backup & Sync"
         footer={

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { CaptureButton, EditableQuote, go, Group, LANGS, QuoteDetails, Segmented, Sheet } from './components'
+import { CaptureButton, EditableQuote, GlassButton, go, Group, LANGS, QuoteDetails, Segmented, Sheet } from './components'
 import { formatSelection } from './format'
 import { Icon } from './icons'
-import { readPage, readRegion, warmUp } from './ocr'
+import { readPage, readQuality, readRegion, warmUp, WRONG_LANGUAGE } from './ocr'
 import { PageSelect } from './PageSelect'
 import { takePendingPhoto } from './pending'
-import { detectPageNumber, type OcrWord, type Pt, type Range } from './selection'
+import { detectPageNumber, selectRange, type OcrWord, type Pt, type Range } from './selection'
 import { currentBookId, type Store } from './store'
 import type { Lang } from './types'
 
@@ -22,7 +22,14 @@ export function Capture({ store }: { store: Store }) {
   const [progress, setProgress] = useState(0)
   const [failed, setFailed] = useState<string | null>(null)
   const [range, setRange] = useState<Range | null>(null)
-  const [stroke, setStroke] = useState<Pt[] | null>(null)
+  const [stroke, setStrokeState] = useState<Pt[] | null>(null)
+  const strokeRef = useRef<Pt[] | null>(null)
+  const setStroke = (p: Pt[] | null) => {
+    strokeRef.current = p
+    setStrokeState(p)
+  }
+  const readRun = useRef(0)
+  const [detecting, setDetecting] = useState<Lang | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<{ id: string; uncertain: string[] } | null>(null)
 
@@ -33,31 +40,65 @@ export function Capture({ store }: { store: Store }) {
   }, [])
   useEffect(() => () => void (src && URL.revokeObjectURL(src)), [src])
 
-  const read = (l: Lang) => {
-    const img = imgEl.current
-    if (!img) return
+  const readLang = (l: Lang) => {
     let job = pages.current.get(l)
     if (!job) {
-      job = readPage(img, l, setProgress)
+      job = readPage(imgEl.current!, l, setProgress)
       pages.current.set(l, job)
       job.catch(() => pages.current.delete(l))
     }
-    setReading(true)
-    setFailed(null)
-    setWords(null)
-    setProgress(0)
-    const current = () => langRef.current === l // ignore a read for a language you've switched away from
-    job
-      .then((ws) => current() && setWords(ws))
-      .catch((e) => current() && setFailed((e as Error).message || 'Could not read the page'))
-      .finally(() => current() && setReading(false))
+    return job
   }
 
-  const switchLang = (l: Lang) => {
+  const chooseLang = (l: Lang) => {
     setLang(l)
     langRef.current = l
     localStorage.setItem(LANG_KEY, l)
+  }
+
+  /**
+   * Read with the last-used language; if the result looks like the wrong script
+   * (low confidence), read again with the other one and keep the better read.
+   * `forced` skips detection when you tap the language toggle yourself.
+   */
+  const read = async (forced?: Lang) => {
+    if (!imgEl.current) return
+    const run = ++readRun.current
+    const live = () => run === readRun.current
+    setReading(true)
+    setFailed(null)
+    setWords(null)
     setRange(null)
+    setProgress(0)
+    try {
+      const first = forced ?? langRef.current
+      let best = { lang: first, words: await readLang(first) }
+      if (!forced && readQuality(best.words) < WRONG_LANGUAGE && live()) {
+        const other: Lang = first === 'eng' ? 'guj' : 'eng'
+        setDetecting(other)
+        setProgress(0)
+        const ws = await readLang(other)
+        if (readQuality(ws) > readQuality(best.words)) best = { lang: other, words: ws }
+      }
+      if (!live()) return
+      chooseLang(best.lang)
+      setWords(best.words)
+      // You may have highlighted while the page was still being read.
+      const pending = strokeRef.current
+      if (pending) setRange(selectRange(best.words, pending))
+    } catch (e) {
+      if (live()) setFailed((e as Error).message || 'Could not read the page')
+    } finally {
+      if (live()) {
+        setReading(false)
+        setDetecting(null)
+      }
+    }
+  }
+
+  const switchLang = (l: Lang) => {
+    if (l === lang && words) return
+    chooseLang(l)
     read(l)
   }
 
@@ -118,22 +159,25 @@ export function Capture({ store }: { store: Store }) {
   return (
     <div className="capture">
       <header className="capture-top">
-        <button className="nav-button" onClick={() => go('/')}>
-          Cancel
-        </button>
-        <Segmented value={lang} options={LANGS} onChange={switchLang} className="compact" />
-        <CaptureButton className="nav-button">Retake</CaptureButton>
+        <GlassButton icon="close" ariaLabel="Cancel" onClick={() => go('/')} />
+        <Segmented value={lang} options={LANGS} onChange={switchLang} className="compact glass" />
+        <CaptureButton className="glass-button glass circle">
+          <Icon name="retake" size={21} />
+          <span className="sr-only">Retake</span>
+        </CaptureButton>
       </header>
 
       <PageSelect
         src={src}
         words={words}
         reading={reading}
+        status={detecting ? `Trying ${detecting === 'guj' ? 'ગુજરાતી' : 'English'}` : 'Reading page'}
         progress={progress}
+        pendingStroke={!range ? stroke : null}
         range={range}
         onImage={(el) => {
           imgEl.current = el
-          read(lang)
+          read()
         }}
         onRange={setRange}
         onStroke={setStroke}
@@ -151,21 +195,17 @@ export function Capture({ store }: { store: Store }) {
         onClose={() => go('/')}
         title="Saved"
         leading={
-          <button
-            className="nav-button destructive"
+          <GlassButton
+            icon="trash"
+            destructive
+            ariaLabel="Discard"
             onClick={async () => {
               if (savedQuote) await store.deleteQuote(savedQuote)
               reset()
             }}
-          >
-            Discard
-          </button>
+          />
         }
-        trailing={
-          <button className="nav-button bold" onClick={() => go(`/?new=${saved?.id}`)}>
-            Done
-          </button>
-        }
+        trailing={<GlassButton icon="check" prominent ariaLabel="Done" onClick={() => go(`/?new=${saved?.id}`)} />}
       >
         {savedQuote && (
           <>

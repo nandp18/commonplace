@@ -19,7 +19,7 @@ Capturing a quote from a physical book should take **under 10 seconds**, in Engl
 1. **Document, don't interrupt.** Capture is the only required step. Book, page, tags, and notes are optional and can be added later, or never.
 2. **Forgiving input.** Fingers on a phone are imprecise. A rough loop, a swipe, or an underline should all produce a clean selection of whole words.
 3. **Text worth keeping.** What gets saved should read like it was carefully copied by hand, not like raw OCR output.
-4. **Feels native to iOS.** It should look and behave like an Apple app (SF Pro, New York, large titles, inset grouped lists, sheets, Liquid Glass bars), with the page always white.
+4. **Feels native to iOS 26.** It follows Liquid Glass: transparent navigation bars with floating glass buttons, a floating tab bar that minimizes on scroll, glass sheets with ✕ / ✓ actions, and concentric radii. Glass is used only for controls, never for content. Type is SF Pro and New York, and the page is always white.
 
 ## 3. Users
 
@@ -41,7 +41,7 @@ One user: me. I use it mainly on my phone (installed to the home screen) while r
    - **Book** (defaults to the book I'm currently reading, i.e. the last one used; can be changed or removed), **page** (detected automatically from the page number in the margin), **tags**, and a **note**.
    - **Done**, **Capture Another**, or **Discard**.
 
-Language: a sticky **English / ગુજરાતી** toggle on the capture screen. Switching re-reads the page.
+Language is **detected automatically**. The page is read with the last-used language. If the mean OCR confidence is below 70 (the right model scores about 90, the wrong one about 35), the page is re-read with the other language and the better read wins. The **English / ગુજરાતી** toggle shows the result and can override it.
 
 Fallbacks: if no words are found where I pointed, only the marked region is OCR'd. I can also **type or paste** a quote; pasted line breaks are reflowed.
 
@@ -96,7 +96,6 @@ Quote { id, bookId?, text, page?, tags: string[], note?, lang: 'eng'|'guj'|'eng+
 ## 7. Non-goals for v0
 
 - Automatically detecting highlighter marks already on the page.
-- Auto-detecting the language (the toggle is sticky, so it's one tap at most).
 - Storing the original photo or crop. Only the text is kept.
 - Accounts or multi-user support.
 - Kindle or Goodreads import.

@@ -123,6 +123,15 @@ export async function readPage(img: HTMLImageElement, lang: Lang, progress: Prog
   }
 }
 
+/** Mean word confidence. Reading with the wrong language model scores far lower (~35 vs ~90). */
+export function readQuality(words: OcrWord[]): number {
+  if (words.length === 0) return 0
+  return words.reduce((a, w) => a + w.conf, 0) / words.length
+}
+
+/** Below this, the page is probably in the other language. */
+export const WRONG_LANGUAGE = 70
+
 /** Fallback when the page read found nothing where you pointed: OCR just that region. */
 export async function readRegion(img: HTMLImageElement, box: Box, lang: Lang): Promise<string> {
   const { canvas } = preprocess(img, box, 1800)
