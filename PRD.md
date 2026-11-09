@@ -62,6 +62,9 @@ Fallbacks: if no words are found where I pointed, only the marked region is OCR'
 - **Export** to Markdown (grouped by book) and CSV (UTF-8 with BOM so Gujarati opens correctly in Excel and Sheets).
 
 - **The ocean.** An immersive, endless dive, opened from the Ocean tab or "Dive ↓". You start at the surface and scroll down through the water: quotes surface one by one, brightening as they pass the middle of the screen and fading as they drift away. The first lap runs newest to oldest; after that "the tide brings them round again" in a new shuffle each lap. A depth gauge in meters runs down the side, the water darkens as you descend, and marine snow drifts past. Momentum scrolling is custom, so the dive never ends, and it remembers your depth.
+  - **Zones:** Sunlight (white) → Twilight (pale blue-grey) → Midnight / Abyss (near-black, with cream text and glowing drops). The plunge into darkness happens inside a single gap between quotes, so a settled quote is never on mid-grey. The worst contrast at a settled quote is 13:1. Zone and tide labels always sit in open water between quotes.
+  - **Sky and moon:** a dot-matrix moon shows tonight's real phase, casts a glittering moon path on the surface, and sends moonbeams into the twilight. Tap the moon to make it full for a while.
+  - **Life:** caustics in the shallows, bubbles (always rising, more when you dive fast, and a burst where you tap the water), schools of fish in lit water, an occasional whale gliding past, and pulsing jellyfish in the dark.
 
 ### Motion & feedback
 - **Library:** list items rise in as they scroll into view. Tapping a quote or cover **grows it into its page** (View Transitions shared elements), and the tab selection pill slides between tabs.

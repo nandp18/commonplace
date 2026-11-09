@@ -397,6 +397,7 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
 .ocean-sky { position: absolute; top: 0; left: 0; right: 0; padding: calc(110px + var(--top)) 30px 0; will-change: transform; }
 .ocean-sky h1 { font: 600 34px/1.1 var(--serif); letter-spacing: -0.02em; }
 .ocean-sky p { margin-top: 10px; }
+.ocean-sky .sky-hint { margin-top: 4px; opacity: 0.7; }
 .ocean-quote { position: absolute; top: 0; color: inherit; will-change: transform, opacity, filter; -webkit-user-drag: none; }
 .ocean-quote.left { left: 64px; right: 40px; }
 .ocean-quote.right { left: 30px; right: 72px; }
