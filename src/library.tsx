@@ -9,11 +9,14 @@ import type { Quote } from './types'
 import { byPage, quoteOfTheDay, search } from './util'
 
 type View = 'timeline' | 'books' | 'tags'
+type Tab = View | 'ocean'
 const VIEWS: { value: View; label: string }[] = [
   { value: 'timeline', label: 'Timeline' },
   { value: 'books', label: 'By book' },
   { value: 'tags', label: 'Tags' },
 ]
+/** The ocean is its own immersive screen, so its tab dives rather than switching views. */
+const TABS: { value: Tab; label: string }[] = [...VIEWS, { value: 'ocean', label: 'Ocean' }]
 const VIEW_KEY = 'commonplace.view'
 
 function SettingsButton({ store }: { store: Store }) {
@@ -118,7 +121,7 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
         </>
       ) : (
         <>
-          <TextTabs value={view} options={VIEWS} onChange={setView} />
+          <TextTabs<Tab> value={view} options={TABS} onChange={(v) => (v === 'ocean' ? (location.hash = '/ocean') : setView(v))} />
           <div key={view} className="view-swap">
             {view === 'timeline' && <Timeline store={store} freshId={freshId} />}
             {view === 'books' && <ByBook store={store} />}

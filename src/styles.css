@@ -370,6 +370,34 @@ main.full { padding: 0; }
 .chip:active { transform: scale(0.94); }
 .chip-count { font: 11px var(--mono); opacity: 0.55; margin-left: 3px; }
 
+/* ───────────── The ocean (immersive dive) ───────────── */
+
+html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: none; }
+.ocean { position: fixed; inset: 0; background: #fff; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.ocean:active { cursor: grabbing; }
+.ocean canvas { position: absolute; inset: 0; }
+/* Soft fade under the floating bar so words don't collide with it. */
+.ocean::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: calc(76px + var(--top)); background: linear-gradient(#fff 40%, rgba(255, 255, 255, 0)); pointer-events: none; z-index: 4; }
+.ocean-sky { position: absolute; top: 0; left: 0; right: 0; padding: calc(110px + var(--top)) 30px 0; will-change: transform; }
+.ocean-sky h1 { font: 600 34px/1.1 var(--serif); letter-spacing: -0.02em; }
+.ocean-sky p { margin-top: 10px; }
+.ocean-quote { position: absolute; top: 0; color: inherit; will-change: transform, opacity, filter; -webkit-user-drag: none; }
+.ocean-quote.left { left: 64px; right: 40px; }
+.ocean-quote.right { left: 30px; right: 72px; }
+.quote-text.clamp-ocean { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; font-size: 19px; line-height: 1.42; }
+.quote-text.gu.clamp-ocean { font-size: 18px; line-height: 1.65; }
+.ocean-attr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0 0 0.5em; }
+.tide-marker { position: absolute; top: 0; left: 0; right: 0; margin: 0; text-align: center; will-change: transform; }
+.ocean-bar {
+  position: absolute; z-index: 5; top: calc(10px + var(--top)); left: 18px; right: 18px;
+  display: flex; justify-content: space-between; align-items: center; pointer-events: none;
+}
+.ocean-bar > * { pointer-events: auto; }
+.depth { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 18px; font: 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.empty-ocean { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; cursor: default; }
+.dive-link { color: var(--secondary); }
+.dive-link:active { opacity: 0.5; }
+
 /* ───────────── Books ───────────── */
 
 .cover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 30px 20px; margin: 14px 0 8px; }

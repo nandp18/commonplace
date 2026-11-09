@@ -61,6 +61,8 @@ Fallbacks: if no words are found where I pointed, only the marked region is OCR'
 - **Edit / delete** any quote.
 - **Export** to Markdown (grouped by book) and CSV (UTF-8 with BOM so Gujarati opens correctly in Excel and Sheets).
 
+- **The ocean.** An immersive, endless dive, opened from the Ocean tab or "Dive ↓". You start at the surface and scroll down through the water: quotes surface one by one, brightening as they pass the middle of the screen and fading as they drift away. The first lap runs newest to oldest; after that "the tide brings them round again" in a new shuffle each lap. A depth gauge in meters runs down the side, the water darkens as you descend, and marine snow drifts past. Momentum scrolling is custom, so the dive never ends, and it remembers your depth.
+
 ### Motion & feedback
 - **Library:** list items rise in as they scroll into view. Tapping a quote or cover **grows it into its page** (View Transitions shared elements), and the tab selection pill slides between tabs.
 - **Capture:** haptic ticks as the selection handles snap from word to word, the finger stroke melts into the snapped highlight, and the passage fades in word by word on the filing sheet.

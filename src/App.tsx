@@ -5,13 +5,14 @@ import { CaptureButton } from './components'
 import { Icon } from './icons'
 import { haptic, hasMorph } from './motion'
 import { Library } from './library'
+import { Ocean } from './ocean'
 import { BookView, NewQuote, QuoteView, Settings, Shelf } from './screens'
 import { useStore } from './store'
 
 /** How deep a route sits, so navigation can slide forward or back like iOS. */
 const depth = (hash: string) => {
   const s = hash.replace(/^#\/?/, '').split(/[/?]/)[0]
-  return s === 'book' || s === 'quote' || s === 'settings' || s === 'new' ? 1 : s === 'capture' ? 2 : 0
+  return s === 'book' || s === 'quote' || s === 'settings' || s === 'new' || s === 'ocean' ? 1 : s === 'capture' ? 2 : 0
 }
 
 function useRoute() {
@@ -84,6 +85,9 @@ export function App() {
     case 'settings':
       screen = <Settings store={store} />
       break
+    case 'ocean':
+      screen = <Ocean store={store} />
+      break
     default:
       screen = <Library store={store} freshId={params.get('new') ?? undefined} />
   }
@@ -93,8 +97,8 @@ export function App() {
 
   return (
     <>
-      <main className={section === 'capture' ? 'full' : ''}>{screen}</main>
-      {section !== 'capture' && (
+      <main className={section === 'capture' || section === 'ocean' ? 'full' : ''}>{screen}</main>
+      {section !== 'capture' && section !== 'ocean' && (
         <nav className={`tabbar ${minimized ? 'minimized' : ''}`} aria-label="Tabs">
           <div className="glass tabs" style={{ ['--tab' as string]: inLibrary ? 0 : inBooks ? 1 : -1 }}>
             {(inLibrary || inBooks) && <span className="tab-indicator" aria-hidden />}

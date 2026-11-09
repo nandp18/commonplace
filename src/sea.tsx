@@ -238,9 +238,9 @@ export function DotSea({
     <section className="sea">
       <div className="sea-head">
         <span className="label">{q?.id === dailyId ? `Today · ${dateLabel(Date.now())}` : q ? `Kept ${dateLabel(q.createdAt)}` : ''}</span>
-        <span className="meta-mono">
-          {quotes.length} {quotes.length === 1 ? 'drop' : 'drops'}
-        </span>
+        <a className="meta-mono dive-link" href="#/ocean">
+          {quotes.length} {quotes.length === 1 ? 'drop' : 'drops'} · Dive ↓
+        </a>
       </div>
       <div ref={wrap} className="sea-water">
         <canvas
