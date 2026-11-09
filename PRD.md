@@ -19,7 +19,7 @@ Capturing a quote from a physical book should take **under 10 seconds**, in Engl
 1. **Document, don't interrupt.** Capture is the only required step. Book, page, tags, and notes are optional and can be added later, or never.
 2. **Forgiving input.** Fingers on a phone are imprecise. A rough loop, a swipe, or an underline should all produce a clean selection of whole words.
 3. **Text worth keeping.** What gets saved should read like it was carefully copied by hand, not like raw OCR output.
-4. **Feels native to iOS 26.** It follows Liquid Glass: transparent navigation bars with floating glass buttons, a floating tab bar that minimizes on scroll, glass sheets with ✕ / ✓ actions, and concentric radii. Glass is used only for controls, never for content. Type is SF Pro and New York, and the page is always white.
+4. **Feels native to iOS 26.** It follows Liquid Glass: transparent navigation bars with floating glass buttons, a floating tab bar that minimizes on scroll, glass sheets with ✕ / ✓ actions, and concentric radii. Glass is used only for controls, never for content. Visual direction is warm editorial: white pages, cream sheets and cards, near-black ink buttons, a gold hanging quote mark, dot-matrix icons, serif book titles, and mono labels. The capture screen is dark, since it's a photo viewer, and the only exception to white pages.
 
 ## 3. Users
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { CaptureButton, EditableQuote, GlassButton, go, Group, LANGS, QuoteDetails, Segmented, Sheet } from './components'
+import { CaptureButton, EditableQuote, go, QuoteFields, Segmented, Sheet } from './components'
+import { PageArt } from './screens'
 import { formatSelection } from './format'
 import { Icon } from './icons'
 import { readPage, readQuality, readRegion, warmUp, WRONG_LANGUAGE } from './ocr'
@@ -149,22 +150,25 @@ export function Capture({ store }: { store: Store }) {
   const hint = failed
     ? failed
     : range
-      ? 'Drag the handles to adjust'
-      : reading
-        ? 'Highlight or circle the passage'
+      ? 'Selected'
+      : stroke && reading
+        ? 'Got it — finishing the page'
         : words?.length === 0
-          ? 'No text found — circle the passage to try that area'
+          ? 'No text found — circle the passage to read that area'
           : 'Highlight or circle the passage'
 
   return (
     <div className="capture">
       <header className="capture-top">
-        <GlassButton icon="close" ariaLabel="Cancel" onClick={() => go('/')} />
-        <Segmented value={lang} options={LANGS} onChange={switchLang} className="compact glass" />
-        <CaptureButton className="glass-button glass circle">
-          <Icon name="retake" size={21} />
-          <span className="sr-only">Retake</span>
-        </CaptureButton>
+        <div className="navbar-side">
+          <button className="capture-text-button" onClick={() => go('/')}>
+            Cancel
+          </button>
+        </div>
+        <div className="capture-title">Quote</div>
+        <div className="navbar-side end">
+          <Segmented value={lang} options={LANGS_SHORT} onChange={switchLang} className="dark" />
+        </div>
       </header>
 
       <PageSelect
@@ -184,77 +188,76 @@ export function Capture({ store }: { store: Store }) {
       />
 
       <footer className="capture-bottom">
-        <p className={`capture-hint ${failed ? 'error' : ''}`}>{hint}</p>
-        <button className="prominent wide" disabled={!canSave} onClick={save}>
-          {saving ? 'Saving…' : 'Save Quote'}
+        <p className={`capture-hint ${failed ? 'error' : ''} ${range ? 'selected' : ''}`}>{hint}</p>
+        <button className="light-button wide" disabled={!canSave} onClick={save}>
+          {saving ? 'Filing…' : 'Use this passage'}
         </button>
+        <CaptureButton className="capture-text-button small">
+          <Icon name="retake" size={16} /> Retake
+        </CaptureButton>
       </footer>
 
-      <Sheet
-        open={!!savedQuote}
-        onClose={() => go('/')}
-        title="Saved"
-        leading={
-          <GlassButton
-            icon="trash"
-            destructive
-            ariaLabel="Discard"
-            onClick={async () => {
-              if (savedQuote) await store.deleteQuote(savedQuote)
-              reset()
-            }}
-          />
-        }
-        trailing={<GlassButton icon="check" prominent ariaLabel="Done" onClick={() => go(`/?new=${saved?.id}`)} />}
-      >
+      <Sheet open={!!savedQuote} onClose={() => go(`/?new=${saved?.id}`)}>
         {savedQuote && (
-          <>
-            <div className="saved-badge">
-              <span className="saved-check">
-                <Icon name="check" size={16} />
+          <div className="filing">
+            <div className="filing-head">
+              <span className="filing-label">Quote</span>
+              <span className="saved-tag">
+                <Icon name="check" size={12} /> Saved
               </span>
-              In your library
             </div>
             <div className="saved-quote">
               <EditableQuote store={store} quote={savedQuote} uncertain={saved?.uncertain} />
-              {saved && saved.uncertain.length > 0 && (
-                <p className="footnote">Underlined words may be misread. Tap the text to fix.</p>
-              )}
             </div>
-            <QuoteDetails store={store} quote={savedQuote} />
-            <Group>
-              <CaptureButton className="row tappable tint center">
-                <Icon name="camera" size={19} /> Capture Another
-              </CaptureButton>
-            </Group>
-          </>
+            {saved && saved.uncertain.length > 0 && (
+              <p className="footnote">Wavy words may be misread — tap the quote to fix.</p>
+            )}
+            <QuoteFields store={store} quote={savedQuote} />
+            <button className="ink-button wide" onClick={() => go(`/?new=${saved?.id}`)}>
+              <Icon name="sparkle" size={18} /> File quote
+            </button>
+            <div className="filing-secondary">
+              <button
+                className="text-button destructive"
+                onClick={async () => {
+                  await store.deleteQuote(savedQuote)
+                  reset()
+                }}
+              >
+                Discard
+              </button>
+              <CaptureButton className="text-button">Capture another</CaptureButton>
+            </div>
+          </div>
         )}
       </Sheet>
     </div>
   )
 }
 
+const LANGS_SHORT: { value: Lang; label: string }[] = [
+  { value: 'eng', label: 'EN' },
+  { value: 'guj', label: 'ગુ' },
+]
+
 function PickPhoto() {
   return (
     <div className="pick">
-      <div className="pick-art" aria-hidden>
-        <span className="pick-line" />
-        <span className="pick-line hl" />
-        <span className="pick-line hl short" />
-        <span className="pick-line" />
-        <span className="pick-line short" />
-      </div>
-      <h2>Capture a Quote</h2>
-      <p className="secondary">Photograph the page, then run your finger over the lines you love.</p>
+      <PageArt />
+      <h2>Capture a quote</h2>
+      <p>Photograph the page, then run your finger over the lines you love.</p>
       <div className="pick-actions">
-        <CaptureButton className="prominent wide">
-          <Icon name="camera" size={20} /> Take Photo
+        <CaptureButton className="light-button wide">
+          <Icon name="camera" size={20} /> Take photo
         </CaptureButton>
-        <CaptureButton className="tinted wide" library>
-          <Icon name="photos" size={20} /> Choose from Photos
+        <CaptureButton className="dark-button wide" library>
+          <Icon name="photos" size={20} /> Choose from photos
         </CaptureButton>
-        <a className="nav-button" href="#/new">
+        <a className="capture-text-button" href="#/new">
           Type it instead
+        </a>
+        <a className="capture-text-button" href="#/">
+          Cancel
         </a>
       </div>
     </div>

@@ -16,9 +16,9 @@ interface Props {
   onStroke: (stroke: Pt[] | null) => void
 }
 
-const HIGHLIGHT = 'rgba(255, 204, 0, 0.42)'
-const INK = 'rgba(255, 196, 0, 0.55)'
-const HANDLE = '#FF9500'
+const HIGHLIGHT = 'rgba(112, 148, 236, 0.5)'
+const INK = 'rgba(112, 148, 236, 0.55)'
+const HANDLE = '#3478F6'
 
 type Mode = 'none' | 'draw' | 'pinch' | 'start' | 'end'
 
@@ -58,7 +58,7 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
 
     // "I can see the text": a brief glow over every word when the page read finishes.
     if (words && shimmer.current > 0) {
-      ctx.fillStyle = `rgba(255, 204, 0, ${0.28 * shimmer.current})`
+      ctx.fillStyle = `rgba(112, 148, 236, ${0.3 * shimmer.current})`
       for (const w of words) ctx.fillRect(w.x0 / kk, w.y0 / kk, (w.x1 - w.x0) / kk, (w.y1 - w.y0) / kk)
     }
 

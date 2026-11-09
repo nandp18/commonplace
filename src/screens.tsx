@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import {
-  attribution,
   BookCover,
   CaptureButton,
   EditableQuote,
@@ -11,7 +10,7 @@ import {
   LANGS,
   Page,
   QuoteCard,
-  QuoteDetails,
+  QuoteFields,
   QuoteText,
   Row,
   Segmented,
@@ -23,10 +22,22 @@ import { loadSyncConfig, saveSyncConfig, testConfig, type SyncConfig } from './s
 import type { Lang } from './types'
 import { byPage, download, quoteOfTheDay, search, toCsv, toMarkdown } from './util'
 
-const today = () => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+const todayLabel = () =>
+  new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()
+
+function SettingsButton({ store }: { store: Store }) {
+  const k = store.syncState.kind
+  return (
+    <span className="badge-wrap">
+      <GlassButton icon="settings" href="#/settings" ariaLabel="Settings" />
+      {k !== 'ok' && <span className={`sync-badge ${k}`} />}
+    </span>
+  )
+}
 
 export function Library({ store, freshId }: { store: Store; freshId?: string }) {
   const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
   const [shuffled, setShuffled] = useState<string | null>(null)
   const results = useMemo(() => search(store.quotes, store.bookMap, query), [store.quotes, store.bookMap, query])
   const daily = quoteOfTheDay(store.quotes)
@@ -41,24 +52,31 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
     setShuffled(next.id)
   }
 
+  const nav = {
+    leading: <SettingsButton store={store} />,
+    trailing: store.quotes.length > 0 && (
+      <GlassButton
+        icon={searching ? 'close' : 'search'}
+        ariaLabel="Search"
+        onClick={() => {
+          setSearching(!searching)
+          setQuery('')
+        }}
+      />
+    ),
+  }
+
   if (store.ready && store.quotes.length === 0) {
     return (
-      <Page title="Library">
+      <Page title="Commonplace" {...nav}>
         <div className="empty">
-          <div className="pick-art" aria-hidden>
-            <span className="pick-line" />
-            <span className="pick-line hl" />
-            <span className="pick-line hl short" />
-            <span className="pick-line" />
-          </div>
+          <PageArt />
           <h2>Keep the lines that keep you.</h2>
-          <p className="secondary">
-            Photograph a page, run your finger over a passage, and it’s saved — in English or ગુજરાતી.
-          </p>
-          <CaptureButton className="prominent wide">
-            <Icon name="camera" size={20} /> Capture Your First Quote
+          <p className="secondary">Photograph a page, run your finger over a passage, and it’s filed — in English or ગુજરાતી.</p>
+          <CaptureButton className="ink-button wide">
+            <Icon name="camera" size={20} /> Capture a quote
           </CaptureButton>
-          <a className="nav-button" href="#/new">
+          <a className="text-button" href="#/new">
             Type one instead
           </a>
         </div>
@@ -67,24 +85,24 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
   }
 
   return (
-    <Page
-      title="Library"
-      trailing={
-        <span className="badge-wrap">
-          <GlassButton icon="settings" href="#/settings" ariaLabel="Settings" />
-          <SyncBadge store={store} />
-        </span>
-      }
-    >
-      <div className="search-field">
-        <Icon name="search" size={17} />
-        <input type="search" placeholder="Search quotes, books, notes" value={query} onChange={(e) => setQuery(e.target.value)} />
-      </div>
+    <Page title="Commonplace" {...nav}>
+      {searching && (
+        <div className="search-field">
+          <Icon name="search" size={16} />
+          <input
+            type="search"
+            autoFocus
+            placeholder="Search quotes, books, notes"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+      )}
 
       {query ? (
         <>
-          <h3 className="section-header">
-            {results.length} {results.length === 1 ? 'Result' : 'Results'}
+          <h3 className="label">
+            {results.length} {results.length === 1 ? 'result' : 'results'}
           </h3>
           <div className="quote-list">
             {results.map((q) => (
@@ -95,20 +113,25 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
       ) : (
         <>
           {featured && (
-            <section className="today">
+            <a href={`#/quote/${featured.id}`} className="today-card" key={featured.id}>
               <div className="today-head">
-                <span className="today-eyebrow">{featured.id === daily?.id ? today() : 'Rediscovered'}</span>
-                <button className="text-icon" onClick={shuffle} aria-label="Shuffle">
-                  <Icon name="shuffle" size={20} />
+                <span className="label">{featured.id === daily?.id ? `Today · ${todayLabel()}` : 'Rediscovered'}</span>
+                <button
+                  className="text-icon"
+                  aria-label="Shuffle"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    shuffle()
+                  }}
+                >
+                  <Icon name="sparkle" size={18} />
                 </button>
               </div>
-              <a href={`#/quote/${featured.id}`} className="today-card" key={featured.id}>
-                <QuoteText text={featured.text} className="large clamp-today" />
-                <span className="today-attr">{attribution(bookOf(featured.bookId), featured.page) || 'Loose page'}</span>
-              </a>
-            </section>
+              <QuoteText text={featured.text} className="large clamp-today" />
+              <Attribution book={bookOf(featured.bookId)} page={featured.page} />
+            </a>
           )}
-          <h3 className="section-header">Recent</h3>
+          <h3 className="label">Recent</h3>
           <div className="quote-list">
             {store.quotes.slice(0, 60).map((q) => (
               <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} fresh={q.id === freshId} />
@@ -120,9 +143,28 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
   )
 }
 
-function SyncBadge({ store }: { store: Store }) {
-  const k = store.syncState.kind
-  return k === 'ok' ? null : <span className={`sync-badge ${k}`} />
+/** Serif title, mono author and page — the way a book would credit itself. */
+function Attribution({ book, page }: { book?: { title: string; author: string }; page?: string }) {
+  if (!book && !page) return null
+  return (
+    <div className="attribution">
+      {book && <span className="attr-title">{book.title}</span>}
+      <span className="attr-mono">{[book?.author, page && `p.${page}`].filter(Boolean).join(' · ')}</span>
+    </div>
+  )
+}
+
+export function PageArt() {
+  return (
+    <div className="page-art" aria-hidden>
+      <span className="art-line" />
+      <span className="art-line hl" />
+      <span className="art-line hl" />
+      <span className="art-line hl short" />
+      <span className="art-line" />
+      <span className="art-line short" />
+    </div>
+  )
 }
 
 export function Shelf({ store }: { store: Store }) {
@@ -135,21 +177,24 @@ export function Shelf({ store }: { store: Store }) {
   const loose = store.quotes.filter((q) => !q.bookId || !store.bookMap.has(q.bookId)).length
 
   return (
-    <Page title="Books">
-      {books.length === 0 && loose === 0 && <p className="secondary center pad">Books appear here as you file quotes under them.</p>}
+    <Page title="Books" leading={<SettingsButton store={store} />}>
+      {books.length === 0 && loose === 0 && (
+        <p className="secondary center pad">Books appear here as you file quotes under them.</p>
+      )}
       <div className="cover-grid">
         {books.map((b) => (
           <a key={b.id} href={`#/book/${b.id}`} className="cover-cell">
             <BookCover book={b} />
-            <span className="cover-caption">
-              {counts.get(b.id)} {counts.get(b.id) === 1 ? 'quote' : 'quotes'}
+            <span className="cover-caption-title">{b.title}</span>
+            <span className="cover-caption-mono">
+              {[b.author, `${counts.get(b.id)} ${counts.get(b.id) === 1 ? 'quote' : 'quotes'}`].filter(Boolean).join(' · ')}
             </span>
           </a>
         ))}
       </div>
       {loose > 0 && (
         <Group>
-          <Row icon="page" label="Loose Pages" value={String(loose)} chevron href="#/book/loose" />
+          <Row icon="page" label="Loose pages" value={String(loose)} chevron href="#/book/loose" />
         </Group>
       )}
     </Page>
@@ -166,52 +211,57 @@ export function BookView({ store, id }: { store: Store; id: string }) {
     .filter((q) => (isLoose ? !q.bookId || !store.bookMap.has(q.bookId) : q.bookId === id))
     .sort(byPage)
 
-  if (!isLoose && !book) return <Page title="Book" back="#/books">{null}</Page>
+  if (!isLoose && !book) return <Page title="" back="#/books">{null}</Page>
 
   return (
     <Page
-      title={book?.title ?? 'Loose Pages'}
-      large={false}
+      title=""
       back="#/books"
-      trailing={
-        book && <GlassButton label={editing ? 'Cancel' : 'Edit'} onClick={() => setEditing(!editing)} />
-      }
+      trailing={book && <GlassButton label={editing ? 'Cancel' : 'Edit'} onClick={() => setEditing(!editing)} />}
     >
-      {book && (
+      {book ? (
         <div className="book-hero">
           <BookCover book={{ ...book, title: editing ? title || book.title : book.title }} size="large" />
           {editing ? (
-            <Group>
-              <Row label="Title">
-                <input className="row-input" value={title} onChange={(e) => setTitle(e.target.value)} />
-              </Row>
-              <Row label="Author">
-                <input className="row-input" value={author} placeholder="—" onChange={(e) => setAuthor(e.target.value)} />
-              </Row>
-              <Row
-                tint
-                label="Save"
+            <div className="fields card">
+              <label className="field-line">
+                <span className="field-label">Title</span>
+                <input className="field-input" value={title} onChange={(e) => setTitle(e.target.value)} />
+              </label>
+              <label className="field-line">
+                <span className="field-label">Author</span>
+                <input className="field-input" value={author} placeholder="—" onChange={(e) => setAuthor(e.target.value)} />
+              </label>
+              <button
+                className="ink-button wide"
                 onClick={async () => {
                   if (title.trim()) await store.updateBook({ ...book, title: title.trim(), author: author.trim() })
                   setEditing(false)
                 }}
-              />
-            </Group>
+              >
+                Save
+              </button>
+            </div>
           ) : (
             <>
               <h1 className="book-hero-title">{book.title}</h1>
-              {book.author && <p className="secondary">{book.author}</p>}
+              {book.author && <p className="book-hero-author">by {book.author}</p>}
+              <span className="count-pill">
+                {quotes.length} {quotes.length === 1 ? 'quote' : 'quotes'}
+              </span>
             </>
           )}
         </div>
+      ) : (
+        <div className="book-hero">
+          <h1 className="book-hero-title">Loose pages</h1>
+          <p className="book-hero-author">quotes not filed under a book</p>
+        </div>
       )}
-      <h3 className="section-header">
-        {quotes.length} {quotes.length === 1 ? 'Quote' : 'Quotes'}
-      </h3>
-      <div className="quote-list margin">
-        {quotes.map((q) => (
-          <div key={q.id} className="margin-row">
-            <span className="margin-page">{q.page ?? ''}</span>
+      <div className="numbered">
+        {quotes.map((q, i) => (
+          <div key={q.id} className="numbered-row">
+            <span className="numbered-index">{String(i + 1).padStart(2, '0')}</span>
             <QuoteCard quote={q} showBook={false} />
           </div>
         ))}
@@ -223,9 +273,10 @@ export function BookView({ store, id }: { store: Store; id: string }) {
 export function QuoteView({ store, id }: { store: Store; id: string }) {
   const quote = store.quotes.find((q) => q.id === id)
   const [copied, setCopied] = useState(false)
-  if (!quote) return <Page title="" large={false} back="#/">{null}</Page>
+  if (!quote) return <Page title="" back="#/">{null}</Page>
   const book = quote.bookId ? store.bookMap.get(quote.bookId) : undefined
-  const shareText = `${quote.text}\n\n— ${attribution(book, quote.page) || 'Commonplace'}`
+  const credit = [book?.title, book?.author, quote.page && `p. ${quote.page}`].filter(Boolean).join(', ')
+  const shareText = `“${quote.text}”${credit ? `\n— ${credit}` : ''}`
   const copy = async () => {
     await navigator.clipboard?.writeText(shareText)
     setCopied(true)
@@ -234,8 +285,7 @@ export function QuoteView({ store, id }: { store: Store; id: string }) {
 
   return (
     <Page
-      title={book?.title ?? ''}
-      large={false}
+      title="Quote"
       back="#/"
       trailing={
         <GlassGroup>
@@ -248,23 +298,23 @@ export function QuoteView({ store, id }: { store: Store; id: string }) {
     >
       <article className="quote-hero">
         <EditableQuote store={store} quote={quote} large />
-        {book && <p className="quote-hero-attr">{attribution(book, quote.page)}</p>}
       </article>
-      <QuoteDetails store={store} quote={quote} />
-      <Group>
-        <Row
-          label="Delete Quote"
-          destructive
+      <QuoteFields store={store} quote={quote} />
+      <div className="quiet-actions">
+        <span className="meta-mono">
+          Filed {new Date(quote.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+        </span>
+        <button
+          className="text-button destructive"
           onClick={async () => {
             if (!confirm('Delete this quote?')) return
             await store.deleteQuote(quote)
             go('/')
           }}
-        />
-      </Group>
-      <p className="footnote center">
-        Added {new Date(quote.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-      </p>
+        >
+          Delete
+        </button>
+      </div>
     </Page>
   )
 }
@@ -283,12 +333,7 @@ export function NewQuote({ store }: { store: Store }) {
     go(`/quote/${q.id}`)
   }
   return (
-    <Page
-      title="New Quote"
-      large={false}
-      back="#/"
-      trailing={<GlassButton icon="check" prominent ariaLabel="Save" disabled={!text.trim()} onClick={save} />}
-    >
+    <Page title="New quote" back="#/">
       <textarea
         className="quote-text quote-editor large compose"
         placeholder="Type or paste a passage…"
@@ -296,17 +341,19 @@ export function NewQuote({ store }: { store: Store }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onPaste={(e) => {
-          // Pasted text from PDFs and e-books carries hard line breaks; reflow it.
+          // Text pasted from PDFs and e-books carries hard line breaks; reflow it.
           const pasted = e.clipboardData.getData('text')
           if (!pasted.includes('\n')) return
           e.preventDefault()
           const el = e.currentTarget
-          const next = text.slice(0, el.selectionStart) + tidy(reflow(pasted)) + text.slice(el.selectionEnd)
-          setText(next)
+          setText(text.slice(0, el.selectionStart) + tidy(reflow(pasted)) + text.slice(el.selectionEnd))
         }}
       />
       <Segmented value={lang} options={LANGS} onChange={setLang} />
-      <p className="footnote">You can add the book, page and a note after saving.</p>
+      <button className="ink-button wide spaced" disabled={!text.trim()} onClick={save}>
+        <Icon name="sparkle" size={18} /> File quote
+      </button>
+      <p className="footnote center">Add the book, page and a note after filing.</p>
     </Page>
   )
 }
@@ -320,7 +367,7 @@ export function Settings({ store }: { store: Store }) {
   const s = store.syncState
   const status =
     s.kind === 'off'
-      ? 'Off — quotes are stored only on this device.'
+      ? 'Off — stored on this device only'
       : s.kind === 'syncing'
         ? 'Syncing…'
         : s.kind === 'ok'
@@ -330,11 +377,11 @@ export function Settings({ store }: { store: Store }) {
   return (
     <Page title="Settings" back="#/">
       <Group
-        header="Backup & Sync"
+        header="Backup & sync"
         footer={
           <>
-            Quotes are saved to <code>quotes.json</code> in a <strong>private</strong> repository you own, so they’re
-            backed up and appear on all your devices.
+            Saved to <code>quotes.json</code> in a <strong>private</strong> GitHub repository you own, so your quotes are
+            backed up and on every device.
           </>
         }
       >
@@ -350,7 +397,7 @@ export function Settings({ store }: { store: Store }) {
         </Row>
         <Row
           tint
-          label={existing ? 'Save & Sync Now' : 'Connect'}
+          label={existing ? 'Save & sync now' : 'Connect'}
           onClick={async () => {
             setMsg('Checking…')
             try {

@@ -62,43 +62,37 @@ export function GlassGroup({ children }: { children: ReactNode }) {
 }
 
 /**
- * iOS 26 page: a transparent navigation bar with floating glass buttons. The large title
- * scrolls away and the inline title fades in over a soft scroll-edge blur.
+ * iOS 26 page: transparent navigation bar, centered title, floating glass buttons.
+ * Content scrolls under a soft blur that fades in at the top edge.
  */
 export function Page({
   title,
-  large = true,
   back,
+  leading,
   trailing,
   children,
 }: {
   title: string
-  large?: boolean
   back?: string
+  leading?: ReactNode
   trailing?: ReactNode
   children: ReactNode
 }) {
-  const sentinel = useRef<HTMLDivElement>(null)
-  const [collapsed, setCollapsed] = useState(!large)
+  const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
-    if (!large || !sentinel.current) return
-    const io = new IntersectionObserver(([e]) => setCollapsed(!e.isIntersecting), { rootMargin: '-56px 0px 0px 0px' })
-    io.observe(sentinel.current)
-    return () => io.disconnect()
-  }, [large])
+    const on = () => setScrolled(window.scrollY > 4)
+    on()
+    window.addEventListener('scroll', on, { passive: true })
+    return () => window.removeEventListener('scroll', on)
+  }, [])
 
   return (
     <div className="page">
-      <header className={`navbar ${collapsed ? 'collapsed' : ''}`}>
-        <div className="navbar-side">{back && <GlassButton icon="back" href={back} ariaLabel="Back" />}</div>
+      <header className={`navbar ${scrolled ? 'scrolled' : ''}`}>
+        <div className="navbar-side">{back ? <GlassButton icon="back" href={back} ariaLabel="Back" /> : leading}</div>
         <div className="navbar-title">{title}</div>
         <div className="navbar-side end">{trailing}</div>
       </header>
-      {large && (
-        <h1 className="large-title" ref={sentinel}>
-          {title}
-        </h1>
-      )}
       <div className="page-body">{children}</div>
     </div>
   )
@@ -139,13 +133,18 @@ export function QuoteText({
   highlight,
   uncertain,
   className = '',
+  marks = true,
 }: {
   text: string
   highlight?: string
   uncertain?: string[]
   className?: string
+  /** Wrap in quotation marks, the opening one hung in the margin in gold. */
+  marks?: boolean
 }) {
   const gu = isGujarati(text)
+  // Don't double up if the passage already opens with its own quotation mark.
+  const quoted = marks && !/^[“‘"'…]/.test(text)
   const terms = highlight?.trim().split(/\s+/).filter(Boolean) ?? []
   const re = terms.length ? new RegExp(`(${terms.map(escapeRe).join('|')})`, 'giu') : null
   const unsure = new Set(uncertain ?? [])
@@ -166,7 +165,7 @@ export function QuoteText({
   }
 
   return (
-    <div className={`quote-text ${gu ? 'gu' : ''} ${className}`} lang={gu ? 'gu' : 'en'}>
+    <div className={`quote-text ${gu ? 'gu' : ''} ${quoted ? 'quoted' : ''} ${className}`} lang={gu ? 'gu' : 'en'}>
       {text.split(/\n{2,}/).map((p, i) => (
         <p key={i}>{renderPara(p)}</p>
       ))}
@@ -178,7 +177,7 @@ export function attribution(book?: Book, page?: string) {
   return [book?.title, book?.author, page && `p. ${page}`].filter(Boolean).join(' · ')
 }
 
-/** A quote in a list, styled like an Apple Books highlight. */
+/** A quote in a list: the passage, then a quiet line of where it came from. */
 export function QuoteCard({
   quote,
   book,
@@ -192,21 +191,20 @@ export function QuoteCard({
   highlight?: string
   fresh?: boolean
 }) {
-  const meta = showBook ? attribution(book, quote.page) : quote.page ? `p. ${quote.page}` : ''
   return (
     <a className={`quote-card ${fresh ? 'fresh' : ''}`} href={`#/quote/${quote.id}`}>
       <QuoteText text={quote.text} highlight={highlight} className="clamp" />
       {quote.note && <p className="quote-card-note">{quote.note}</p>}
-      {(meta || quote.tags.length > 0) && (
-        <div className="quote-card-meta">
-          {meta && <span>{meta}</span>}
-          {quote.tags.map((t) => (
-            <span key={t} className="tag">
-              #{t}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className="quote-card-meta">
+        {showBook && book && <span className="meta-book">{book.title}</span>}
+        {quote.page && <span className="meta-mono">p.{quote.page}</span>}
+        {quote.tags.map((t) => (
+          <span key={t} className="meta-mono">
+            #{t}
+          </span>
+        ))}
+        {!book && showBook && !quote.page && <span className="meta-mono">loose page</span>}
+      </div>
     </a>
   )
 }
@@ -464,7 +462,7 @@ export function BookPicker({
 
 /* ───────────── Covers ───────────── */
 
-const CLOTH = ['#8E3B2F', '#2F5D50', '#2B3F66', '#B7802F', '#5B4E7A', '#6F7451', '#A15C45', '#2F6670', '#3D3B38', '#7D2E4B']
+const CLOTH = ['#6f2f25', '#2f4a3b', '#23324f', '#8a6428', '#4b3a57', '#5a5b3e', '#24505a', '#2f2e2b', '#7f3e22']
 
 function hash(s: string) {
   let h = 2166136261
@@ -544,64 +542,65 @@ export function EditableQuote({
   )
 }
 
-/** Book · page · tags · note, as an inset grouped list. Everything optional, saved instantly. */
-export function QuoteDetails({ store, quote }: { store: Store; quote: Quote }) {
+/**
+ * Book · page · note · tags, laid out like a filing card. Everything optional, saved on blur.
+ */
+export function QuoteFields({ store, quote }: { store: Store; quote: Quote }) {
   const [picker, setPicker] = useState(false)
   const book = quote.bookId ? store.bookMap.get(quote.bookId) : undefined
   const [page, setPage] = useState(quote.page ?? '')
-  const [tags, setTags] = useState(quote.tags.join(', '))
+  const [tags, setTags] = useState(quote.tags.map((t) => `#${t}`).join(' '))
   const [note, setNote] = useState(quote.note ?? '')
   useEffect(() => {
     setPage(quote.page ?? '')
-    setTags(quote.tags.join(', '))
+    setTags(quote.tags.map((t) => `#${t}`).join(' '))
     setNote(quote.note ?? '')
   }, [quote.id])
 
   const save = (patch: Partial<Quote>) => store.updateQuote(quote, patch)
 
   return (
-    <>
-      <Group>
-        <Row icon="book" label="Book" value={book?.title} placeholder="None" chevron onClick={() => setPicker(true)} />
-        <Row icon="page" label="Page">
-          <input
-            className="row-input"
-            inputMode="numeric"
-            placeholder="—"
-            value={page}
-            onChange={(e) => setPage(e.target.value)}
-            onBlur={() => page.trim() !== (quote.page ?? '') && save({ page: page.trim() || undefined })}
-          />
-        </Row>
-        <Row icon="tag" label="Tags">
-          <input
-            className="row-input"
-            placeholder="love, courage"
-            value={tags}
-            autoCapitalize="off"
-            onChange={(e) => setTags(e.target.value)}
-            onBlur={() => {
-              const next = parseTags(tags)
-              if (next.join() !== quote.tags.join()) save({ tags: next })
-            }}
-          />
-        </Row>
-      </Group>
-      <Group>
-        <div className="row note-row">
-          <span className="row-icon" data-icon="note">
-            <Icon name="note" size={19} />
+    <div className="fields">
+      <button type="button" className="field-line" onClick={() => setPicker(true)}>
+        <span className="field-label">Book</span>
+        {book ? (
+          <span className="field-value">
+            {book.title}
+            {book.author && <span className="muted"> · {book.author}</span>}
           </span>
-          <textarea
-            className="note-input"
-            rows={2}
-            placeholder="Add a note — why did this stay with you?"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onBlur={() => note.trim() !== (quote.note ?? '') && save({ note: note.trim() || undefined })}
-          />
-        </div>
-      </Group>
+        ) : (
+          <span className="field-value placeholder">Add a book</span>
+        )}
+      </button>
+      <label className="field-line">
+        <span className="field-label">p.</span>
+        <input
+          className="field-pill"
+          inputMode="numeric"
+          value={page}
+          onChange={(e) => setPage(e.target.value)}
+          onBlur={() => page.trim() !== (quote.page ?? '') && save({ page: page.trim() || undefined })}
+        />
+      </label>
+      <textarea
+        className="field-box"
+        rows={1}
+        placeholder="Why it landed (optional)"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        onBlur={() => note.trim() !== (quote.note ?? '') && save({ note: note.trim() || undefined })}
+      />
+      <input
+        className="field-box"
+        placeholder="#tags (optional)"
+        value={tags}
+        autoCapitalize="off"
+        onChange={(e) => setTags(e.target.value)}
+        onBlur={() => {
+          const next = parseTags(tags.replace(/\s+/g, ','))
+          if (next.join() !== quote.tags.join()) save({ tags: next })
+        }}
+      />
       <BookPicker
         store={store}
         open={picker}
@@ -609,6 +608,6 @@ export function QuoteDetails({ store, quote }: { store: Store; quote: Quote }) {
         onClose={() => setPicker(false)}
         onPick={(bookId) => save({ bookId })}
       />
-    </>
+    </div>
   )
 }
