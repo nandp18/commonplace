@@ -373,11 +373,27 @@ main.full { padding: 0; }
 /* ───────────── The ocean (immersive dive) ───────────── */
 
 html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: none; }
-.ocean { position: fixed; inset: 0; background: #fff; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.ocean {
+  position: fixed; inset: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab;
+  /* The loop darkens these as you descend. */
+  background: var(--o-bg, #fff); --text: var(--o-text, #1d1d1b); --secondary: var(--o-muted, #77736a); color: var(--text);
+}
 .ocean:active { cursor: grabbing; }
 .ocean canvas { position: absolute; inset: 0; }
 /* Soft fade under the floating bar so words don't collide with it. */
-.ocean::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: calc(76px + var(--top)); background: linear-gradient(#fff 40%, rgba(255, 255, 255, 0)); pointer-events: none; z-index: 4; }
+.ocean::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: calc(76px + var(--top)); background: linear-gradient(var(--o-bg, #fff) 40%, transparent); pointer-events: none; z-index: 4; }
+.ocean[data-dark='1'] .glass {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 0 12px rgba(255, 255, 255, 0.05);
+}
+.ocean[data-dark='1'] .glass::after { opacity: 0.28; }
+/* The drop a quote shrinks back into. */
+.ocean-drop { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--o-text, #1d1d1b); z-index: 3; }
+/* …then its words re-emerge from the water. */
+.ocean-quote.emerging { animation: emerge 0.85s ease 0.42s backwards; }
+.ocean-quote.left { transform-origin: 0 20px; }
+.ocean-quote.right { transform-origin: 100% 20px; }
+@keyframes emerge { from { opacity: 0; filter: blur(10px); scale: 0.94; } }
 .ocean-sky { position: absolute; top: 0; left: 0; right: 0; padding: calc(110px + var(--top)) 30px 0; will-change: transform; }
 .ocean-sky h1 { font: 600 34px/1.1 var(--serif); letter-spacing: -0.02em; }
 .ocean-sky p { margin-top: 10px; }
@@ -387,7 +403,7 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
 .quote-text.clamp-ocean { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; font-size: 19px; line-height: 1.42; }
 .quote-text.gu.clamp-ocean { font-size: 18px; line-height: 1.65; }
 .ocean-attr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0 0 0.5em; }
-.tide-marker { position: absolute; top: 0; left: 0; right: 0; margin: 0; text-align: center; will-change: transform; }
+.zone-marker { position: absolute; top: 0; left: 0; right: 0; margin: 0; text-align: center; will-change: transform; }
 .ocean-bar {
   position: absolute; z-index: 5; top: calc(10px + var(--top)); left: 18px; right: 18px;
   display: flex; justify-content: space-between; align-items: center; pointer-events: none;

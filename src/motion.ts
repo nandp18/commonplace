@@ -81,6 +81,8 @@ export function morphName(kind: 'quote' | 'cover', id: string, source: string): 
 }
 
 export const hasMorph = () => target !== null
+/** Which screen the current morph started from, e.g. 'ocean'. */
+export const morphSource = () => target?.source
 export const clearMorph = () => {
   target = null
 }

@@ -15,7 +15,7 @@ import {
 } from './components'
 import { reflow, tidy } from './format'
 import { Icon } from './icons'
-import { haptic, markTransition, morphName } from './motion'
+import { haptic, markTransition, morphName, morphSource } from './motion'
 import { currentBookId, type Store } from './store'
 import { loadSyncConfig, saveSyncConfig, testConfig, type SyncConfig } from './sync'
 import type { Lang } from './types'
@@ -194,10 +194,13 @@ export function QuoteView({ store, id }: { store: Store; id: string }) {
     setTimeout(() => setCopied(false), 1500)
   }
 
+  // Back goes where you came from: the ocean keeps your depth.
+  const back = morphSource() === 'ocean' ? '#/ocean' : '#/'
+
   return (
     <Page
       title="Quote"
-      back="#/"
+      back={back}
       trailing={
         <GlassGroup>
           {'share' in navigator && (
