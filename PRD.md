@@ -57,7 +57,7 @@ Fallbacks: if no words are found where I pointed, only the marked region is OCR'
 - **Home / Library.** Quote of the day at the top, then recent quotes.
 - **Full-text search** across quote text, notes, tags, book titles, and authors, in both English and Gujarati, filtered live as I type.
 - **Browse by book.** A grid of generated cloth-bound covers with quote counts. Tapping a book shows its quotes ordered by page, with page numbers in the margin. Quotes with no book are grouped under **Loose Pages**.
-- **Rediscover deck.** A swipeable stack of cards at the top of the Library. Today's quote is on top (it changes at midnight), followed by a day-seeded shuffle of up to 30 others. Flick a card away to see the next; tap one to open it.
+- **The sea.** At the top of the Library, the collection is drawn as a sea of dots in the same dot-matrix style as the icons. Every quote is one drop: newest just under the surface, oldest deepest. Today's drop glows gold. Tap a drop and it ripples, rises, and shows its quote beneath the sea; tap again to open it. A newly filed quote falls in through the surface with a splash.
 - **Edit / delete** any quote.
 - **Export** to Markdown (grouped by book) and CSV (UTF-8 with BOM so Gujarati opens correctly in Excel and Sheets).
 

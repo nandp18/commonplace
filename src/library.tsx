@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { BookCover, CaptureButton, GlassButton, Page, QuoteCard } from './components'
-import { QuoteDeck } from './deck'
+import { DotSea } from './sea'
 import { Icon } from './icons'
 import { haptic } from './motion'
 import { PageArt } from './screens'
@@ -148,7 +148,7 @@ function Timeline({ store, freshId }: { store: Store; freshId?: string }) {
 
   return (
     <>
-      <QuoteDeck quotes={store.quotes} dailyId={daily?.id} bookOf={bookOf} />
+      <DotSea quotes={store.quotes} dailyId={daily?.id} freshId={freshId} bookOf={bookOf} />
       {months.map(([month, qs]) => (
         <section key={month}>
           <h3 className="label sticky-label">
