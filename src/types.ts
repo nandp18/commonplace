@@ -11,7 +11,8 @@ export interface Book {
 
 export interface Quote {
   id: string
-  bookId: string
+  /** Optional: capture first, file it later (or never). */
+  bookId?: string
   text: string
   page?: string
   tags: string[]

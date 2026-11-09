@@ -7,7 +7,7 @@ export function search(quotes: Quote[], books: Map<string, Book>, query: string)
   const terms = norm(query).split(/\s+/).filter(Boolean)
   if (terms.length === 0) return quotes
   return quotes.filter((q) => {
-    const b = books.get(q.bookId)
+    const b = q.bookId ? books.get(q.bookId) : undefined
     const hay = norm([q.text, q.note, q.tags.join(' '), b?.title, b?.author, q.page].join(' '))
     return terms.every((t) => hay.includes(t))
   })
@@ -30,20 +30,25 @@ const pageNum = (q: Quote) => parseInt(q.page ?? '', 10) || Infinity
 
 export const byPage = (a: Quote, b: Quote) => pageNum(a) - pageNum(b) || a.createdAt - b.createdAt
 
+function mdQuote(q: Quote): string[] {
+  const out = q.text.split('\n').map((l) => (l ? `> ${l}` : '>'))
+  const meta = [q.page && `p. ${q.page}`, ...q.tags.map((t) => `#${t}`)].filter(Boolean)
+  if (meta.length) out.push('>', `> — ${meta.join(' · ')}`)
+  if (q.note) out.push('', q.note)
+  out.push('')
+  return out
+}
+
 export function toMarkdown(quotes: Quote[], books: Book[]): string {
   const out = ['# Commonplace', '']
   for (const book of [...books].sort((a, b) => a.title.localeCompare(b.title))) {
     const qs = quotes.filter((q) => q.bookId === book.id).sort(byPage)
     if (qs.length === 0) continue
-    out.push(`## ${book.title}${book.author ? ` — ${book.author}` : ''}`, '')
-    for (const q of qs) {
-      out.push(...q.text.split('\n').map((l) => `> ${l}`))
-      const meta = [q.page && `p. ${q.page}`, ...q.tags.map((t) => `#${t}`)].filter(Boolean)
-      if (meta.length) out.push('>', `> — ${meta.join(' · ')}`)
-      if (q.note) out.push('', q.note)
-      out.push('')
-    }
+    out.push(`## ${book.title}${book.author ? ` — ${book.author}` : ''}`, '', ...qs.flatMap(mdQuote))
   }
+  const known = new Set(books.map((b) => b.id))
+  const loose = quotes.filter((q) => !q.bookId || !known.has(q.bookId))
+  if (loose.length) out.push('## Loose pages', '', ...loose.flatMap(mdQuote))
   return out.join('\n')
 }
 
@@ -51,7 +56,7 @@ export function toCsv(quotes: Quote[], books: Map<string, Book>): string {
   const esc = (v: string | undefined) => `"${(v ?? '').replace(/"/g, '""')}"`
   const rows = [['text', 'book', 'author', 'page', 'tags', 'note', 'language', 'created']]
   for (const q of quotes) {
-    const b = books.get(q.bookId)
+    const b = q.bookId ? books.get(q.bookId) : undefined
     rows.push([q.text, b?.title ?? '', b?.author ?? '', q.page ?? '', q.tags.join(', '), q.note ?? '', q.lang, new Date(q.createdAt).toISOString()])
   }
   // BOM so Excel/Sheets read Gujarati as UTF-8.

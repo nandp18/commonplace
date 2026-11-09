@@ -3,6 +3,11 @@ import { loadAll, newId, putBooks, putQuotes } from './db'
 import { loadSyncConfig, sync } from './sync'
 import type { Book, Collection, Quote } from './types'
 
+const LAST_BOOK = 'commonplace.lastBook'
+
+/** The book you're probably still reading: new captures are filed under it. */
+export const currentBookId = () => localStorage.getItem(LAST_BOOK) ?? undefined
+
 export type SyncState =
   | { kind: 'off' }
   | { kind: 'syncing' }
@@ -17,6 +22,8 @@ export function useStore() {
   )
   const syncTimer = useRef<number | undefined>(undefined)
   const syncing = useRef(false)
+  const latest = useRef(all)
+  latest.current = all
 
   const runSync = useCallback(async () => {
     const cfg = loadSyncConfig()
@@ -91,9 +98,27 @@ export function useStore() {
       const quote: Quote = { ...q, id: q.id ?? newId(), createdAt: q.createdAt ?? now, updatedAt: now }
       await putQuotes([quote])
       setAll((c) => ({ ...c, quotes: [...c.quotes.filter((x) => x.id !== quote.id), quote] }))
-      localStorage.setItem('commonplace.lastBook', quote.bookId)
+      if (quote.bookId) localStorage.setItem(LAST_BOOK, quote.bookId)
       scheduleSync()
       return quote
+    },
+    [scheduleSync],
+  )
+
+  const updateQuote = useCallback(
+    async (q: Quote, patch: Partial<Quote>) => {
+      // Merge onto the newest copy, so quick successive edits don't clobber each other.
+      const base = latest.current.quotes.find((x) => x.id === q.id) ?? q
+      const next: Quote = { ...base, ...patch, updatedAt: Date.now() }
+      latest.current = { ...latest.current, quotes: latest.current.quotes.map((x) => (x.id === q.id ? next : x)) }
+      await putQuotes([next])
+      setAll((c) => ({ ...c, quotes: c.quotes.map((x) => (x.id === q.id ? next : x)) }))
+      if ('bookId' in patch) {
+        if (patch.bookId) localStorage.setItem(LAST_BOOK, patch.bookId)
+        else localStorage.removeItem(LAST_BOOK)
+      }
+      scheduleSync()
+      return next
     },
     [scheduleSync],
   )
@@ -108,7 +133,7 @@ export function useStore() {
     [scheduleSync],
   )
 
-  return { ready, books, bookMap, quotes, saveBook, updateBook, saveQuote, deleteQuote, syncState, runSync }
+  return { ready, books, bookMap, quotes, saveBook, updateBook, saveQuote, updateQuote, deleteQuote, syncState, runSync }
 }
 
 export type Store = ReturnType<typeof useStore>
