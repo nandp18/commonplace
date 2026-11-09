@@ -4,7 +4,8 @@ import { Capture } from './Capture'
 import { CaptureButton } from './components'
 import { Icon } from './icons'
 import { haptic, hasMorph } from './motion'
-import { BookView, Library, NewQuote, QuoteView, Settings, Shelf } from './screens'
+import { Library } from './library'
+import { BookView, NewQuote, QuoteView, Settings, Shelf } from './screens'
 import { useStore } from './store'
 
 /** How deep a route sits, so navigation can slide forward or back like iOS. */

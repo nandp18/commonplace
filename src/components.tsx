@@ -562,11 +562,11 @@ function hash(s: string) {
 export const coverColor = (b: Book) => CLOTH[hash(b.id + b.title) % CLOTH.length]
 
 /** A generated cloth-bound cover, so every book looks like a book. */
-export function BookCover({ book, size = 'grid', morph }: { book: Book; size?: 'grid' | 'large' | 'mini'; morph?: string }) {
+export function BookCover({ book, size = 'grid', morph }: { book: Book; size?: 'grid' | 'large' | 'small' | 'mini'; morph?: string }) {
   const gu = isGujarati(book.title)
   return (
     <div className={`cover ${size}`} style={{ ['--cloth' as string]: coverColor(book), viewTransitionName: morph } as React.CSSProperties}>
-      {size !== 'mini' && (
+      {(size === 'grid' || size === 'large') && (
         <>
           <span className={`cover-title ${gu ? 'gu' : ''}`}>{book.title}</span>
           <span className="cover-rule" />

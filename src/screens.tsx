@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
   BookCover,
-  CaptureButton,
   EditableQuote,
   GlassButton,
   GlassGroup,
@@ -15,13 +14,12 @@ import {
   Segmented,
 } from './components'
 import { reflow, tidy } from './format'
-import { QuoteDeck } from './deck'
 import { Icon } from './icons'
 import { haptic, markTransition, morphName } from './motion'
 import { currentBookId, type Store } from './store'
 import { loadSyncConfig, saveSyncConfig, testConfig, type SyncConfig } from './sync'
 import type { Lang } from './types'
-import { byPage, download, quoteOfTheDay, search, toCsv, toMarkdown } from './util'
+import { byPage, download, toCsv, toMarkdown } from './util'
 
 function SettingsButton({ store }: { store: Store }) {
   const k = store.syncState.kind
@@ -30,86 +28,6 @@ function SettingsButton({ store }: { store: Store }) {
       <GlassButton icon="settings" href="#/settings" ariaLabel="Settings" />
       {k !== 'ok' && <span className={`sync-badge ${k}`} />}
     </span>
-  )
-}
-
-export function Library({ store, freshId }: { store: Store; freshId?: string }) {
-  const [query, setQuery] = useState('')
-  const [searching, setSearching] = useState(false)
-  const results = useMemo(() => search(store.quotes, store.bookMap, query), [store.quotes, store.bookMap, query])
-  const daily = quoteOfTheDay(store.quotes)
-  const bookOf = (id?: string) => (id ? store.bookMap.get(id) : undefined)
-
-  const nav = {
-    leading: <SettingsButton store={store} />,
-    trailing: store.quotes.length > 0 && (
-      <GlassButton
-        icon={searching ? 'close' : 'search'}
-        ariaLabel="Search"
-        onClick={() => {
-          setSearching(!searching)
-          setQuery('')
-        }}
-      />
-    ),
-  }
-
-  if (store.ready && store.quotes.length === 0) {
-    return (
-      <Page title="Commonplace" {...nav}>
-        <div className="empty">
-          <PageArt />
-          <h2>Keep the lines that keep you.</h2>
-          <p className="secondary">Photograph a page, run your finger over a passage, and it’s filed — in English or ગુજરાતી.</p>
-          <CaptureButton className="ink-button wide">
-            <Icon name="camera" size={20} /> Capture a quote
-          </CaptureButton>
-          <a className="text-button" href="#/new">
-            Type one instead
-          </a>
-        </div>
-      </Page>
-    )
-  }
-
-  return (
-    <Page title="Commonplace" {...nav}>
-      {searching && (
-        <div className="search-field">
-          <Icon name="search" size={16} />
-          <input
-            type="search"
-            autoFocus
-            placeholder="Search quotes, books, notes"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-      )}
-
-      {query ? (
-        <>
-          <h3 className="label">
-            {results.length} {results.length === 1 ? 'result' : 'results'}
-          </h3>
-          <div className="quote-list">
-            {results.map((q, i) => (
-              <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} highlight={query} index={i} source="search" />
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <QuoteDeck quotes={store.quotes} dailyId={daily?.id} bookOf={bookOf} />
-          <h3 className="label">Recent</h3>
-          <div className="quote-list">
-            {store.quotes.slice(0, 60).map((q, i) => (
-              <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} fresh={q.id === freshId} index={i} />
-            ))}
-          </div>
-        </>
-      )}
-    </Page>
   )
 }
 
@@ -431,6 +349,17 @@ export function Settings({ store }: { store: Store }) {
             <li>Copy the token and paste it above.</li>
           </ol>
         </details>
+      </Group>
+
+      <Group
+        header="Sample library"
+        footer="16 public-domain quotes from 9 sources, in English and ગુજરાતી, for trying out browsing. Samples stay on this device and never sync."
+      >
+        {store.hasSamples ? (
+          <Row destructive label="Remove sample quotes" onClick={store.removeSamples} />
+        ) : (
+          <Row tint label="Load sample quotes" onClick={store.loadSamples} />
+        )}
       </Group>
 
       <Group header="Export" footer={`${store.quotes.length} quotes from ${store.books.length} books.`}>

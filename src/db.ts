@@ -49,7 +49,21 @@ export async function loadAll(): Promise<Collection> {
   return { version: 1, books, quotes }
 }
 
+async function deleteMany(store: StoreName, ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const db = await open()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite')
+    const os = tx.objectStore(store)
+    for (const id of ids) os.delete(id)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 export const putBooks = (books: Book[]) => putMany('books', books)
+export const deleteBooks = (ids: string[]) => deleteMany('books', ids)
+export const deleteQuotes = (ids: string[]) => deleteMany('quotes', ids)
 export const putQuotes = (quotes: Quote[]) => putMany('quotes', quotes)
 
 export function newId(): string {

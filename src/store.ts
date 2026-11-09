@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { loadAll, newId, putBooks, putQuotes } from './db'
+import { deleteBooks, deleteQuotes, loadAll, newId, putBooks, putQuotes } from './db'
+import { isSample, sampleLibrary } from './samples'
 import { loadSyncConfig, sync } from './sync'
 import type { Book, Collection, Quote } from './types'
 
@@ -32,7 +33,13 @@ export function useStore() {
     syncing.current = true
     setSyncState({ kind: 'syncing' })
     try {
-      const merged = await sync(cfg, await loadAll())
+      // Sample quotes are for trying the app out; they never leave the device.
+      const local = await loadAll()
+      const merged = await sync(cfg, {
+        ...local,
+        books: local.books.filter((b) => !isSample(b.id)),
+        quotes: local.quotes.filter((q) => !isSample(q.id)),
+      })
       await putBooks(merged.books)
       await putQuotes(merged.quotes)
       setAll(await loadAll())
@@ -133,7 +140,27 @@ export function useStore() {
     [scheduleSync],
   )
 
-  return { ready, books, bookMap, quotes, saveBook, updateBook, saveQuote, updateQuote, deleteQuote, syncState, runSync }
+  const loadSamples = useCallback(async () => {
+    const { books, quotes } = sampleLibrary()
+    await putBooks(books)
+    await putQuotes(quotes)
+    setAll(await loadAll())
+  }, [])
+
+  const removeSamples = useCallback(async () => {
+    const c = await loadAll()
+    await deleteBooks(c.books.filter((b) => isSample(b.id)).map((b) => b.id))
+    await deleteQuotes(c.quotes.filter((q) => isSample(q.id)).map((q) => q.id))
+    if (isSample(localStorage.getItem(LAST_BOOK) ?? '')) localStorage.removeItem(LAST_BOOK)
+    setAll(await loadAll())
+  }, [])
+
+  const hasSamples = useMemo(() => all.quotes.some((q) => isSample(q.id)), [all.quotes])
+
+  return {
+    ready, books, bookMap, quotes, saveBook, updateBook, saveQuote, updateQuote, deleteQuote,
+    syncState, runSync, loadSamples, removeSamples, hasSamples,
+  }
 }
 
 export type Store = ReturnType<typeof useStore>
