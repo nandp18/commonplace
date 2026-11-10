@@ -58,7 +58,8 @@ function isJunk(w: OcrWord): boolean {
   if (!hasLetters && w.conf < 60) return true
   // Garbled Latin/symbol soup misread on a Gujarati page (or vice versa).
   if (w.conf < 25 && /[€§&@#]/.test(t)) return true
-  return w.conf < 10
+  // Tesseract is often unsure of real Gujarati words. A flagged word beats one that vanishes.
+  return w.conf < 10 && !GUJARATI.test(t)
 }
 
 export interface Formatted {
@@ -111,6 +112,12 @@ export function formatSelection(words: OcrWord[], [s, e]: Range, reread?: OcrWor
 
   const uncertain = [...new Set(picked.filter((w) => w.conf < 70).map((w) => bare(w.text)).filter(Boolean))]
   return { text, uncertain }
+}
+
+/** The Gujarati model reads English fluently and confidently, so confidence can't catch an English page. */
+export function readsAsEnglish(words: OcrWord[]): boolean {
+  const text = words.map((w) => w.text).join(' ')
+  return LATIN.test(text) && !isGujarati(text)
 }
 
 /** A word without surrounding punctuation, for matching. */

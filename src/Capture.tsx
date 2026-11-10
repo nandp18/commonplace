@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CaptureButton, EditableQuote, go, QuoteFields, Segmented, Sheet } from './components'
 import { haptic } from './motion'
 import { PageArt } from './screens'
-import { formatSelection } from './format'
+import { formatSelection, readsAsEnglish } from './format'
 import { Icon } from './icons'
 import { readPage, readQuality, readRegion, rereadSelection, warmUp, WRONG_LANGUAGE } from './ocr'
 import { PageSelect } from './PageSelect'
@@ -75,12 +75,13 @@ export function Capture({ store }: { store: Store }) {
     try {
       const first = forced ?? langRef.current
       let best = { lang: first, words: await readLang(first) }
-      if (!forced && readQuality(best.words) < WRONG_LANGUAGE && live()) {
+      const english = first === 'guj' && readsAsEnglish(best.words)
+      if (!forced && (english || readQuality(best.words) < WRONG_LANGUAGE) && live()) {
         const other: Lang = first === 'eng' ? 'guj' : 'eng'
         setDetecting(other)
         setProgress(0)
         const ws = await readLang(other)
-        if (readQuality(ws) > readQuality(best.words)) best = { lang: other, words: ws }
+        if (english || readQuality(ws) > readQuality(best.words)) best = { lang: other, words: ws }
       }
       if (!live()) return
       chooseLang(best.lang)
@@ -111,7 +112,8 @@ export function Capture({ store }: { store: Store }) {
     try {
       let text = '', uncertain: string[] = []
       if (words && range) {
-        const sharper = await rereadSelection(img, words, range, lang).catch(() => undefined)
+        // On Gujarati the closer read scored higher confidence while adding mistakes.
+        const sharper = lang === 'guj' ? undefined : await rereadSelection(img, words, range, lang).catch(() => undefined)
         ;({ text, uncertain } = formatSelection(words, range, sharper))
       }
       if (!text && stroke) {

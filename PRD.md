@@ -81,7 +81,7 @@ Fallbacks: if no words are found where I pointed, only the marked region is OCR'
 | App type | Mobile-first web app, installable to the home screen (web manifest) | No app store needed, and the camera works via `<input capture>` |
 | Framework | Vite + React + TypeScript | Small and fast to build with |
 | Design | iOS design language in CSS: SF Pro / New York system fonts, Liquid Glass tab bar, sheets, inset grouped lists, View Transitions for push/pop | A native feel without an app store |
-| OCR | **Tesseract.js** in the browser, `eng` + `guj` models | Free, private, and needs no server. Models (~2–10 MB) download once and are cached by the browser |
+| OCR | **Tesseract.js** in the browser, `eng` + Gujarati script models. Gujarati pages are also read flattened (tilt and curve removed) and the more confident read is kept | Free, private, and needs no server. Models (~2–10 MB) download once and are cached by the browser |
 | Selection | Full-page OCR with word bounding boxes. The gesture is interpreted geometrically (loop vs. swipe) and snapped to words and sentences. The logic lives in `selection.ts` and is unit-tested against real OCR output | Finger input is imprecise, and snapping to real words makes it forgiving |
 | Image prep | Background flattening (divide by a blurred copy), then contrast stretching | Handles shadows near the spine and uneven lamp light |
 | Local storage | **IndexedDB** | Works offline and saves instantly |

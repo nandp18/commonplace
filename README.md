@@ -5,7 +5,7 @@ A personal commonplace book: snap a photo of a page, circle the passage, and sav
 See [PRD.md](PRD.md) for the product spec.
 
 - **Static site** for GitHub Pages (Vite + React + TypeScript)
-- **OCR in the browser** with Tesseract.js (`eng`, `guj`). Models download once from jsDelivr and are cached
+- **OCR in the browser** with Tesseract.js (English and the Gujarati script model; Gujarati pages are also read flattened and the better read is kept). Models download once from jsDelivr and are cached
 - **Storage** in IndexedDB, with optional sync to `quotes.json` in a private GitHub repo
 
 ## Develop
@@ -35,6 +35,7 @@ npm run build
 | `src/Capture.tsx` | Capture flow: photo → lasso → OCR → review |
 | `src/Lasso.tsx` | Freehand selection canvas |
 | `src/ocr.ts` | Tesseract workers, image preprocessing, line reflow |
+| `src/flatten.ts` | Measures page tilt and curve, and maps word positions back to the photo |
 | `src/store.ts` | App state, IndexedDB, background sync |
 | `src/sync.ts` | GitHub Contents API sync with last-write-wins merge |
 | `src/util.ts` | Search, quote of the day, Markdown/CSV export |
