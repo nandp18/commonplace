@@ -59,10 +59,33 @@ function useMinimizeOnScroll() {
   return min
 }
 
+/** Holds its own scroll state, so shrinking the bar never re-renders the screen behind it. */
+function TabBar({ inLibrary, inBooks }: { inLibrary: boolean; inBooks: boolean }) {
+  const minimized = useMinimizeOnScroll()
+  return (
+    <nav className={`tabbar ${minimized ? 'minimized' : ''}`} aria-label="Tabs">
+      <div className="glass tabs" style={{ ['--tab' as string]: inLibrary ? 0 : inBooks ? 1 : -1 }}>
+        {(inLibrary || inBooks) && <span className="tab-indicator" aria-hidden />}
+        <a href="#/" className={inLibrary ? 'on' : ''} onClick={() => !inLibrary && haptic('tick')}>
+          <Icon name="quote" size={22} animate={inLibrary} />
+          <span>Library</span>
+        </a>
+        <a href="#/books" className={inBooks ? 'on' : ''} onClick={() => !inBooks && haptic('tick')}>
+          <Icon name="book" size={22} animate={inBooks} />
+          <span>Books</span>
+        </a>
+      </div>
+      <CaptureButton className="glass capture-fab">
+        <Icon name="camera" size={26} />
+        <span className="sr-only">Capture</span>
+      </CaptureButton>
+    </nav>
+  )
+}
+
 export function App() {
   const store = useStore()
   const { hash, parts, params } = useRoute()
-  const minimized = useMinimizeOnScroll()
   const [section, id] = parts
 
   let screen
@@ -98,25 +121,7 @@ export function App() {
   return (
     <>
       <main className={section === 'capture' || section === 'ocean' ? 'full' : ''}>{screen}</main>
-      {section !== 'capture' && section !== 'ocean' && (
-        <nav className={`tabbar ${minimized ? 'minimized' : ''}`} aria-label="Tabs">
-          <div className="glass tabs" style={{ ['--tab' as string]: inLibrary ? 0 : inBooks ? 1 : -1 }}>
-            {(inLibrary || inBooks) && <span className="tab-indicator" aria-hidden />}
-            <a href="#/" className={inLibrary ? 'on' : ''} onClick={() => !inLibrary && haptic('tick')}>
-              <Icon name="quote" size={22} animate={inLibrary} />
-              <span>Library</span>
-            </a>
-            <a href="#/books" className={inBooks ? 'on' : ''} onClick={() => !inBooks && haptic('tick')}>
-              <Icon name="book" size={22} animate={inBooks} />
-              <span>Books</span>
-            </a>
-          </div>
-          <CaptureButton className="glass capture-fab">
-            <Icon name="camera" size={26} />
-            <span className="sr-only">Capture</span>
-          </CaptureButton>
-        </nav>
-      )}
+      {section !== 'capture' && section !== 'ocean' && <TabBar inLibrary={inLibrary} inBooks={inBooks} />}
     </>
   )
 }

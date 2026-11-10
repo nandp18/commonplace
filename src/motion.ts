@@ -35,14 +35,19 @@ export function haptic(kind: 'tick' | 'tap' | 'success' = 'tap') {
 
 let observer: IntersectionObserver | null = null
 
-/** Fades and lifts an element into place the first time it scrolls into view. */
+/**
+ * Fades and lifts an element into place when a screen opens. Anything off screen at
+ * that moment simply appears, so a long list has nothing left to animate while scrolling.
+ */
 export function useReveal<T extends HTMLElement>() {
   const ref = useRef<T>(null)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
+    const box = el.getBoundingClientRect()
+    const offScreen = box.top > window.innerHeight || box.bottom < 0
     // The element a view transition is morphing into must be visible right away.
-    if (reducedMotion() || el.querySelector('[style*="view-transition-name"]')) {
+    if (offScreen || reducedMotion() || el.querySelector('[style*="view-transition-name"]')) {
       el.classList.add('in', 'instant')
       return
     }

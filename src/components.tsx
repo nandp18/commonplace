@@ -110,15 +110,15 @@ export function Page({
   )
 }
 
-/** Opens the camera straight from the tab bar: one tap from anywhere to capture. */
-export function CaptureButton({ className = '', children, library = false }: { className?: string; children: ReactNode; library?: boolean }) {
+/** One tap from anywhere to capture. Offers your photo library too, unless `camera` is set. */
+export function CaptureButton({ className = '', children, camera = false }: { className?: string; children: ReactNode; camera?: boolean }) {
   return (
     <label className={className}>
       {children}
       <input
         type="file"
         accept="image/*"
-        {...(library ? {} : { capture: 'environment' as const })}
+        {...(camera ? { capture: 'environment' as const } : {})}
         className="sr-only"
         tabIndex={-1}
         onChange={(e) => {
@@ -564,9 +564,16 @@ export const coverColor = (b: Book) => CLOTH[hash(b.id + b.title) % CLOTH.length
 /** A generated cloth-bound cover, so every book looks like a book. */
 export function BookCover({ book, size = 'grid', morph }: { book: Book; size?: 'grid' | 'large' | 'small' | 'mini'; morph?: string }) {
   const gu = isGujarati(book.title)
+  // A dead or offline link falls back to the generated cover.
+  const [failed, setFailed] = useState(false)
+  const image = book.cover && !failed ? book.cover : undefined
   return (
-    <div className={`cover ${size}`} style={{ ['--cloth' as string]: coverColor(book), viewTransitionName: morph } as React.CSSProperties}>
-      {(size === 'grid' || size === 'large') && (
+    <div
+      className={`cover ${size} ${image ? 'has-image' : ''}`}
+      style={{ ['--cloth' as string]: coverColor(book), viewTransitionName: morph } as React.CSSProperties}
+    >
+      {image && <img className="cover-img" src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />}
+      {!image && (size === 'grid' || size === 'large') && (
         <>
           <span className={`cover-title ${gu ? 'gu' : ''}`}>{book.title}</span>
           <span className="cover-rule" />

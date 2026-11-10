@@ -275,6 +275,9 @@ export function NewQuote({ store }: { store: Store }) {
   )
 }
 
+const importSummary = (plan: ImportPlan) =>
+  [plan.quotes.length && `${plan.quotes.length} quotes`, plan.covers && `${plan.covers} covers`].filter(Boolean).join(' and ')
+
 export function Settings({ store }: { store: Store }) {
   const existing = loadSyncConfig()
   const [cfg, setCfg] = useState<SyncConfig>(existing ?? { owner: '', repo: 'commonplace-data', path: 'quotes.json', token: '' })
@@ -292,9 +295,9 @@ export function Settings({ store }: { store: Store }) {
     try {
       const next = await store.previewImport(parseImportFile(await picked.text()))
       const already = next.skipped ? ` ${next.skipped} already here will be skipped.` : ''
-      if (next.quotes.length) {
+      if (next.quotes.length || next.covers) {
         setPlan(next)
-        setImportMsg(`Ready to add ${next.quotes.length} quotes and ${next.books.length} new books.${already}`)
+        setImportMsg(`Ready to add ${importSummary(next)}.${already}`)
       } else setImportMsg(`Nothing new to add.${already}`)
     } catch (err) {
       setImportMsg((err as Error).message)
@@ -392,10 +395,10 @@ export function Settings({ store }: { store: Store }) {
           <>
             <Row
               tint
-              label={`Add ${plan.quotes.length} quotes`}
+              label={`Add ${importSummary(plan)}`}
               onClick={async () => {
                 await store.applyImport(plan)
-                setImportMsg(`Added ${plan.quotes.length} quotes.`)
+                setImportMsg(`Added ${importSummary(plan)}.`)
                 setPlan(null)
               }}
             />

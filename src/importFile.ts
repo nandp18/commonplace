@@ -22,6 +22,8 @@ export interface ImportBook {
   author: string
   /** Used for quotes without their own date. */
   date?: string
+  /** Link to a cover image. Also fills in books already in the library. */
+  cover?: string
   quotes: ImportQuote[]
 }
 
@@ -35,6 +37,8 @@ export interface ImportPlan {
   quotes: Quote[]
   /** Quotes already in the library, or deleted from it earlier. */
   skipped: number
+  /** Books gaining a cover, whether new or already in the library. */
+  covers: number
 }
 
 /** Text reduced to letters and digits, so punctuation and case can't hide a duplicate. */
@@ -77,6 +81,7 @@ export function parseImportFile(json: string): ImportFile {
   for (const book of data.books) {
     const where = `In “${book.title || 'Unfiled'}”`
     if (typeof book.title !== 'string') throw new Error(`A book is missing its title. Use "" for unfiled quotes.`)
+    if (book.cover && !/^https:\/\//.test(book.cover)) throw new Error(`${where}: the cover must be an https link.`)
     try {
       toTime(book.date)
     } catch (e) {
@@ -102,9 +107,11 @@ export function planImport(file: ImportFile, existing: Collection, now: number):
   const bookIds = new Map(existing.books.filter((b) => !b.deleted).map((b) => [quoteKey(b.title), b.id]))
   const usedIds = new Set(existing.quotes.map((q) => q.id))
   const usedText = new Set(existing.quotes.filter((q) => !q.deleted).map((q) => quoteKey(q.text)))
+  const liveBooks = new Map(existing.books.filter((b) => !b.deleted).map((b) => [b.id, b]))
   const books = new Map<string, Book>()
   const quotes: Quote[] = []
   let skipped = 0
+  let covers = 0
 
   for (const book of file.books) {
     const titleKey = quoteKey(book.title)
@@ -143,6 +150,13 @@ export function planImport(file: ImportFile, existing: Collection, now: number):
         updatedAt: now,
       })
     }
+
+    const bookId = titleKey ? bookIds.get(titleKey) : undefined
+    const target = bookId ? (books.get(bookId) ?? liveBooks.get(bookId)) : undefined
+    if (book.cover && target && !target.cover) {
+      books.set(target.id, { ...target, cover: book.cover, updatedAt: now })
+      covers++
+    }
   }
-  return { books: [...books.values()], quotes, skipped }
+  return { books: [...books.values()], quotes, skipped, covers }
 }

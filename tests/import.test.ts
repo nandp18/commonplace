@@ -157,4 +157,20 @@ assert.equal(second.skipped, first.quotes.length)
 const tombs = first.quotes.map((q) => ({ ...q, deleted: true }))
 assert.equal(planImport(file, { ...after, quotes: tombs }, NOW).quotes.length, 0)
 
+// Covers fill in books you already have, once, without touching their quotes
+const COVER = 'https://example.com/a.jpg'
+const coverFile: ImportFile = { version: 1, books: [{ title: 'WALDEN', author: '', cover: COVER, quotes: [] }, { title: 'Not In Library', author: '', cover: COVER, quotes: [] }] }
+const withCover = planImport(coverFile, lib, NOW)
+assert.equal(withCover.covers, 1, 'a cover for a book you do not have is ignored')
+assert.equal(withCover.quotes.length, 0)
+assert.deepEqual(withCover.books.map((b) => [b.id, b.title, b.cover, b.updatedAt]), [['w', 'walden', COVER, NOW]])
+assert.equal(withCover.books[0].createdAt, 1)
+const covered = { ...lib, books: withCover.books }
+assert.equal(planImport(coverFile, covered, NOW + 1).covers, 0, 'an existing cover is kept')
+const brandNew = planImport({ version: 1, books: [{ title: 'Fresh', author: 'A', cover: COVER, quotes: [{ text: 'A new one' }] }] }, empty, NOW)
+assert.equal(brandNew.books[0].cover, COVER)
+assert.equal(brandNew.covers, 1)
+assert.equal(brandNew.books.length, 1)
+assert.throws(() => parseImportFile(JSON.stringify({ version: 1, books: [{ title: 'X', author: '', cover: 'javascript:alert(1)', quotes: [] }] })), /https link/)
+
 console.log('import tests passed')

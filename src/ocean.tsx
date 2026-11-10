@@ -35,6 +35,8 @@ const smooth = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
   return t * t * (3 - 2 * t)
 }
+/** Re-blurring text on every frame is too slow for phones, so depth of field is desktop only. */
+const softFocus = matchMedia('(pointer: fine)').matches
 const mix = (a: number[], b: number[], t: number) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
 const mix3 = (a: number[], b: number[], c: number[], ab: number, bc: number) => mix(mix(a, b, ab), c, bc)
 
@@ -760,7 +762,7 @@ export function Ocean({ store }: { store: Store }) {
         if (item) {
           item.style.transform = `translate3d(0, ${y - 14}px, 0)`
           item.style.opacity = String(0.1 + 0.9 * o)
-          item.style.filter = o > 0.92 ? '' : `blur(${(1 - o) * 2.4}px)`
+          if (softFocus) item.style.filter = o > 0.92 ? '' : `blur(${(1 - o) * 2.4}px)`
         }
       }
       // A tick as each quote passes the focus line during a glide.

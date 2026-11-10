@@ -255,10 +255,10 @@ function PickPhoto() {
       <h2>Capture a quote</h2>
       <p>Photograph the page, then run your finger over the lines you love.</p>
       <div className="pick-actions">
-        <CaptureButton className="light-button wide">
+        <CaptureButton className="light-button wide" camera>
           <Icon name="camera" size={20} /> Take photo
         </CaptureButton>
-        <CaptureButton className="dark-button wide" library>
+        <CaptureButton className="dark-button wide">
           <Icon name="photos" size={20} /> Choose from photos
         </CaptureButton>
         <a className="capture-text-button" href="#/new">

@@ -4,6 +4,8 @@ export interface Book {
   id: string
   title: string
   author: string
+  /** Link to a cover image. Without one the book gets a generated cloth cover. */
+  cover?: string
   createdAt: number
   updatedAt: number
   deleted?: boolean
