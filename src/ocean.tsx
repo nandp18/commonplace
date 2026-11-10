@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { GlassButton, QuoteText } from './components'
 import { haptic, markTransition, reducedMotion } from './motion'
 import type { Store } from './store'
+import { loadSeen, markSeen, pickTide, whenLabel } from './tide'
 import type { Quote } from './types'
 import { quoteOfTheDay } from './util'
 
@@ -185,8 +186,9 @@ export function Ocean({ store }: { store: Store }) {
   const phys = useRef({
     x: savedDepth,
     v: 0, // px/s
-    mode: 'idle' as 'idle' | 'drag' | 'spring' | 'wheel' | 'ascend',
+    mode: 'idle' as 'idle' | 'drag' | 'spring' | 'wheel' | 'ascend' | 'tide',
     ascent: { from: 0, start: 0, dur: 1 },
+    racing: false, // too fast to read: skip mounting the quotes rushing past
     target: savedDepth,
     targetK: -1,
     raw: savedDepth,
@@ -206,6 +208,23 @@ export function Ocean({ store }: { store: Store }) {
     if (p.x < 4) return
     const dur = Math.min(1.8, Math.max(0.7, 0.7 + p.x / 6000))
     Object.assign(p, { mode: 'ascend', ascent: { from: p.x, start: performance.now(), dur } })
+    haptic('tap')
+  }
+
+  /** Where the tide last set you down, for its line of when you highlighted it. */
+  const [tideK, setTideK] = useState<number | null>(null)
+  const tideId = useRef<string | undefined>(undefined)
+
+  /** A current carries you to a quote you haven't seen in a while, at its true depth. */
+  const ride = () => {
+    const p = phys.current
+    const pick = pickTide(byAge, loadSeen(), Date.now(), Math.random, tideId.current)
+    if (!pick) return
+    const k = byAge.indexOf(pick)
+    const distance = Math.abs(snapPoint(k, window.innerHeight) - p.x)
+    const dur = reducedMotion() ? 0.01 : Math.min(2.8, 1.3 + distance / 50000)
+    setTideK(null)
+    Object.assign(p, { mode: 'tide', targetK: k, target: Math.max(0, snapPoint(k, window.innerHeight)), landed: false, ascent: { from: p.x, start: performance.now(), dur } })
     haptic('tap')
   }
 
@@ -309,7 +328,7 @@ export function Ocean({ store }: { store: Store }) {
       if (p.mode !== 'drag') return
       const tapped = p.moved <= 6
       el.dataset.dragged = tapped ? '' : '1'
-      if (tapped && !(e.target as HTMLElement).closest('.ocean-quote, .ocean-bar')) {
+      if (tapped && !(e.target as HTMLElement).closest('.ocean-quote, .ocean-bar, .ocean-tide')) {
         const moon = moonAt(window.innerWidth, p.x)
         if (Math.hypot(e.clientX - moon.x, e.clientY - moon.y) < moon.r + 14) {
           moonBoost.current = 1 // a full moon, for a while
@@ -358,7 +377,8 @@ export function Ocean({ store }: { store: Store }) {
       el.removeEventListener('wheel', wheel)
       window.removeEventListener('keydown', key)
       clearTimeout(wheelTimer)
-      savedDepth = Math.max(0, phys.current.mode === 'spring' ? phys.current.target : phys.current.x)
+      const heading = phys.current.mode === 'spring' || phys.current.mode === 'tide'
+      savedDepth = Math.max(0, heading ? phys.current.target : phys.current.x)
     }
   }, [n])
 
@@ -379,6 +399,7 @@ export function Ocean({ store }: { store: Store }) {
     let shownRange = ''
     let shownTone = ''
     let focusK = -2
+    let lastTideTick = 0
     let school: School | null = null
     let whale: Whale | null = null
     const jellies: Jelly[] = []
@@ -420,9 +441,31 @@ export function Ocean({ store }: { store: Store }) {
           Object.assign(p, { x: 0, v: 0, mode: 'idle', target: 0, landed: true })
           haptic('success')
         }
+      } else if (p.mode === 'tide') {
+        const { from, start, dur } = p.ascent
+        // Re-aimed every frame: the quote's real height is only known once it's mounted.
+        p.target = Math.max(0, snapPoint(p.targetK, h))
+        const u = Math.min(1, (now - start) / 1000 / dur)
+        const x = from + (p.target - from) * Math.pow(smooth(0, 1, u), 0.65) // slow to start, long to settle
+        const v = (x - p.x) / Math.max(dt, 0.001)
+        p.racing = Math.abs(v) > 3500
+        p.v = Math.max(-6000, Math.min(6000, v))
+        p.x = x
+        if (u >= 1) {
+          Object.assign(p, { x: p.target, v: 0, mode: 'idle', landed: true })
+          const q = byAge[p.targetK]
+          tideId.current = q.id
+          markSeen(q.id)
+          setTideK(p.targetK)
+          ripples.current.push({ x: dropX(p.targetK, w), y: worldY(p.targetK), t0: now })
+          burst(dropX(p.targetK, w), worldY(p.targetK), 7)
+          haptic('success')
+        }
       } else if (p.mode === 'idle' && p.x < 0) {
         p.x *= 0.8
       }
+      if (p.mode !== 'tide') p.racing = false // landed, or a drag or wheel took over
+      el.dataset.racing = p.racing ? '1' : ''
       const top = p.x
       const speed = p.mode === 'drag' ? 0 : Math.abs(p.v)
       const focusWorld = top + h * FOCUS
@@ -727,7 +770,7 @@ export function Ocean({ store }: { store: Store }) {
       const k0 = Math.max(0, kAt(top - 300))
       const k1 = kAt(top + h + 300) + 1
       const key = `${k0}-${k1}`
-      if (key !== shownRange) {
+      if (key !== shownRange && !p.racing) {
         shownRange = key
         setRange([k0, k1])
       }
@@ -766,9 +809,13 @@ export function Ocean({ store }: { store: Store }) {
         }
       }
       // A tick as each quote passes the focus line during a glide.
-      if (nearest !== focusK && nearestD < 60 && p.mode !== 'idle') {
+      if (nearest !== focusK && (nearestD < 60 || p.mode === 'tide') && p.mode !== 'idle') {
         focusK = nearest
         if (p.mode === 'spring' && nearest !== p.targetK) haptic('tick')
+        if (p.mode === 'tide' && now - lastTideTick > 90) {
+          lastTideTick = now
+          haptic('tick')
+        }
       }
 
       // ── Labels live in the gaps between quotes; two in one gap share it ──
@@ -872,6 +919,7 @@ export function Ocean({ store }: { store: Store }) {
             <span className="ocean-attr">
               {book && <span className="attr-title">{book.title}</span>}
               {q.page && <span className="attr-mono">p.{q.page}</span>}
+              {k === tideK && <span className="attr-mono tide-when">{whenLabel(q.createdAt)}</span>}
             </span>
           </a>
         )
@@ -889,6 +937,12 @@ export function Ocean({ store }: { store: Store }) {
           <span ref={depthLabel}>{`${Math.round(Math.max(0, (savedDepth + window.innerHeight * FOCUS - SURFACE) * METERS))} m`}</span>
         </button>
       </header>
+
+      <div className="ocean-tide">
+        <button className="depth glass" onClick={ride}>
+          Ride the tide
+        </button>
+      </div>
     </div>
   )
 }

@@ -420,6 +420,11 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
 /* The ↑ appears once you're below the shallows: tap to rise to the surface. */
 .depth-up { display: inline-block; width: 0; opacity: 0; overflow: hidden; transition: width 0.35s var(--spring), opacity 0.25s, margin 0.35s var(--spring); }
 .ocean[data-deep='1'] .depth-up { width: 1ch; opacity: 1; margin-right: 8px; }
+.ocean-tide { position: absolute; z-index: 5; left: 0; right: 0; bottom: calc(24px + var(--bottom)); display: flex; justify-content: center; pointer-events: none; }
+.ocean-tide .depth { pointer-events: auto; height: 46px; padding: 0 22px; border-radius: 23px; }
+.ocean[data-racing='1'] .ocean-quote { opacity: 0 !important; transition: opacity 0.15s; }
+.tide-when { flex-basis: 100%; animation: tide-when 0.7s ease 0.15s backwards; }
+@keyframes tide-when { from { opacity: 0; transform: translateY(4px); } }
 .empty-ocean { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; cursor: default; }
 .dive-link { color: var(--secondary); }
 .dive-link:active { opacity: 0.5; }
