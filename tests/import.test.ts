@@ -70,7 +70,31 @@ assert.equal(
   'This clarity simplifies decisions about what work habits a professor adopts or abandons. Here is Feynman:\n\nTo do real good physics work, you do need absolute solid lengths of time.',
 )
 assert.equal(parseNotion('**Page 1**\n\nHello there', 'Title From File').highlights[0].title, 'Title From File')
-assert.equal(parseNotion('# Shopping\n\nMilk\n', 'x').skipped, true)
+assert.equal(parseNotion('# Shopping\n\nMilk\n', 'x').skipped, 'no-headings')
+
+// Shapes from the user's real table export
+const props = 'Author: A Writer\nImage: https://example.com/' + 'x'.repeat(150) + '.jpg\nCategory: Satsang\nDate Started: March 23, 2020\nDate Finished: April 22, 2020'
+assert.equal(parseNotion(`# Empty Book\n\n${props}`, 'x').skipped, 'empty')
+assert.equal(
+  parseNotion(`# Grit\n\n${props}\n\nGrit (A) - Your Highlight on page 14 | Location 208-209 | Added on Monday, March 4, 2019\n\n**Some line.**`, 'x').skipped,
+  'kindle-paste',
+)
+assert.equal(parseNotion(`# Notes\n\n${props}\n\n- **Chapter 1**\n    - Point\n    \n    ### **“Nested”**\n`, 'x').skipped, 'outline')
+const sections = parseNotion(
+  `# Essence\n\n${props}\n\n### Kartapanu\n\n**Bold start.** Then more.\n\n### 4 Forms of Akshar (Page 93)\n\nFirst para.\n\n![](a/image.jpg)\n\nSecond para.\n`,
+  'x',
+)
+assert.equal(sections.highlights.length, 2, 'properties and long image urls are not quotes')
+assert.equal(sections.highlights[0].author, 'A Writer')
+assert.equal(sections.highlights[0].note, 'Kartapanu')
+assert.equal(sections.highlights[0].page, undefined)
+assert.equal(sections.highlights[0].text, 'Bold start. Then more.')
+assert.equal(sections.highlights[1].note, '4 Forms of Akshar')
+assert.equal(sections.highlights[1].page, '93')
+assert.equal(sections.highlights[1].text, 'First para.\n\nSecond para.')
+assert.equal(buildReview(sections.highlights).file.books[0].date, '2020-04-22', 'Date Finished is the fallback date')
+assert.equal(parseNotion(`# B\n\n${props}\n\n### Section (Page 7)\n\nIntro:\n\n- a point\n`, 'x').highlights.length, 1, 'a bullet inside a section is not an outline')
+assert.equal(parseNotion(`# B\n\nGoodreads: https://example.com/a b c ${'long '.repeat(40)}\n`, 'x').skipped, 'empty')
 assert.deepEqual(parseNotion('# B\n\nLoose line\n\n**Page 1**\n\nText', 'x').highlights[0].flags, ['before-first-page-heading'])
 
 // Review: duplicates merged across sources, long and overlapping flagged, grouped by book

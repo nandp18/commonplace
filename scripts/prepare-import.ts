@@ -48,18 +48,20 @@ for (const path of values.kindle) {
 }
 
 for (const root of values.notion) {
-  const skipped: string[] = []
+  const skipped = { empty: [] as string[], 'kindle-paste': [] as string[], outline: [] as string[], 'no-headings': [] as string[] }
   let found = 0
   for (const file of markdownFiles(root)) {
     // Notion ends exported file names with a 32-character id.
     const title = basename(file, '.md').replace(/\s+[0-9a-f]{32}$/i, '')
     const page = parseNotion(readFileSync(file, 'utf8'), title)
-    if (page.skipped) skipped.push(title)
+    if (page.skipped) skipped[page.skipped].push(title)
     all.push(...page.highlights)
     found += page.highlights.length
   }
-  report.push(`Notion ${basename(root)}: ${found} found`)
-  if (skipped.length) report.push(`  Left out, no "Page N" headings: ${skipped.join(', ')}`)
+  report.push(`Notion ${basename(root)}: ${found} found, ${skipped.empty.length} empty pages`)
+  if (skipped['kindle-paste'].length) report.push(`  Left out, pasted from Kindle: ${skipped['kindle-paste'].join(', ')}`)
+  if (skipped.outline.length) report.push(`  Left out, bulleted notes: ${skipped.outline.join(', ')}`)
+  if (skipped['no-headings'].length) report.push(`  Left out, no headings to split on: ${skipped['no-headings'].join(', ')}`)
 }
 
 const { file, duplicates } = buildReview(all)
@@ -69,7 +71,7 @@ writeFileSync(values.out, JSON.stringify(file, null, 2) + '\n')
 const quotes = file.books.flatMap((b) => b.quotes)
 const flags = new Map<string, number>()
 for (const q of quotes) for (const f of q.flags ?? []) flags.set(f, (flags.get(f) ?? 0) + 1)
-const undated = file.books.filter((b) => b.quotes.some((q) => !q.date))
+const undated = file.books.filter((b) => !b.date && b.quotes.some((q) => !q.date))
 
 console.log(report.join('\n'))
 console.log(`\n${quotes.length} quotes in ${file.books.length} books, ${duplicates} exact duplicates merged.`)

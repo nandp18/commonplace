@@ -15,6 +15,8 @@ export interface Highlight {
   end?: number
   date?: string
   note?: string
+  /** From the Notion table: when the book was finished. */
+  bookDate?: string
   flags: string[]
 }
 
@@ -121,7 +123,31 @@ export function parseClippings(raw: string): Clippings {
 }
 
 const PAGE_HEADING = /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?\s*(?:page|pg\.?|p\.)\s*(\d[\w–-]*)\s*:?\s*(?:\*\*|__)?\s*$/i
-const PROPERTY = /^[\p{L} ]{1,30}:\s.{0,120}$/u
+const SECTION_HEADING = /^###\s+(.+?)\s*$/
+const SECTION_PAGE = /\s*\(\s*(?:page|pg\.?|p\.)\s*(\d[\w–-]*)\s*\)\s*$/i
+const PROPERTY = /^(?:Author|Image|Category|Goodreads|Date Started|Date Finished):|^[\p{L} ]{1,30}:\s(?:https?:\S+|.{0,120})$/iu
+const KINDLE_PASTE = /[-–—]\s*Your (?:Highlight|Note|Bookmark)\b/
+
+type Heading = { page?: string; label?: string }
+
+function headingOf(line: string): Heading | undefined {
+  const page = line.match(PAGE_HEADING)
+  if (page) return { page: page[1] }
+  const section = line.match(SECTION_HEADING)
+  if (!section) return undefined
+  const text = cleanMarkdown(section[1]).trim()
+  return { page: text.match(SECTION_PAGE)?.[1], label: text.replace(SECTION_PAGE, '') }
+}
+
+const isProperties = (block: string) => block.trim().split('\n').every((l) => PROPERTY.test(l.trim()))
+
+/** "March 24, 2019" → "2019-03-24" */
+function tableDate(s: string | undefined): string | undefined {
+  const d = s ? new Date(s) : undefined
+  if (!d || Number.isNaN(d.getTime())) return undefined
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
 /** Markdown syntax out, characters Notion escaped back in. */
 export function cleanMarkdown(s: string): string {
@@ -140,47 +166,61 @@ export function cleanMarkdown(s: string): string {
 
 export interface NotionPage {
   highlights: Highlight[]
-  /** No `Page N` headings: probably not a highlights page, so it's left out and reported. */
-  skipped: boolean
+  /** Why a page was left out, so it can be reported instead of imported badly. */
+  skipped?: 'empty' | 'kindle-paste' | 'outline' | 'no-headings'
 }
 
-/** One `Page N` heading, up to the next one, is one quote. The page title is the book. */
+/**
+ * A `Page N` or `### Title (Page N)` heading, up to the next one, is one quote. The page
+ * title is the book, and a section's title becomes the quote's note.
+ */
 export function parseNotion(markdown: string, fileTitle: string): NotionPage {
   const lines = markdown.replace(/﻿/g, '').replace(/\r/g, '').split('\n')
-  const first = lines.findIndex((l) => PAGE_HEADING.test(l))
-  if (first < 0) return { highlights: [], skipped: true }
+  const content = lines
+    .filter((l) => !/^#\s+\S/.test(l))
+    .join('\n')
+    .split(/\n\s*\n/)
+    .filter((block) => block.trim() && !isProperties(block))
+  if (!content.length) return { highlights: [], skipped: 'empty' }
+  // Highlights pasted from a Kindle: the clippings file has these with better detail.
+  if (lines.some((l) => KINDLE_PASTE.test(l))) return { highlights: [], skipped: 'kindle-paste' }
+  const first = lines.findIndex((l) => headingOf(l))
+  // Bulleted chapter summaries are your own notes, not passages.
+  if (first < 0) return { highlights: [], skipped: lines.some((l) => /^-\s+\S/.test(l)) ? 'outline' : 'no-headings' }
 
   const preamble = lines.slice(0, first)
   const heading = preamble.findIndex((l) => /^#\s+\S/.test(l))
   const title = heading >= 0 ? cleanMarkdown(preamble[heading].replace(/^#\s+/, '')).trim() : fileTitle
-  const author = preamble.map((l) => l.match(/^\W*author\W*:\W*(.+?)\s*$/i)?.[1]).find(Boolean) ?? ''
+  const property = (name: string) => preamble.map((l) => l.match(new RegExp(`^\\W*${name}\\W*:\\W*(.+?)\\s*$`, 'i'))?.[1]).find(Boolean)
+  const author = property('author') ?? ''
+  const bookDate = tableDate(property('date finished') ?? property('date started'))
   if (heading >= 0) preamble.splice(heading, 1)
 
-  const make = (body: string, page?: string, flags: string[] = []): Highlight | undefined => {
+  const make = (body: string, h: Heading = {}, flags: string[] = []): Highlight | undefined => {
     const text = tidy(reflow(cleanMarkdown(body).trim()))
-    return text ? { title, author, text, origin: 'notion', page, flags } : undefined
+    return text ? { title, author, text, origin: 'notion', page: h.page, note: h.label, bookDate, flags } : undefined
   }
 
   const out: (Highlight | undefined)[] = []
   const intro = preamble
     .join('\n')
     .split(/\n\s*\n/)
-    .filter((block) => block.trim() && !block.trim().split('\n').every((l) => PROPERTY.test(l.trim())))
+    .filter((block) => block.trim() && !isProperties(block))
     .join('\n\n')
-  if (intro) out.push(make(intro, undefined, ['before-first-page-heading']))
+  if (intro) out.push(make(intro, {}, ['before-first-page-heading']))
 
-  let page = lines[first].match(PAGE_HEADING)![1]
+  let current = headingOf(lines[first])!
   let body: string[] = []
   for (const line of lines.slice(first + 1)) {
-    const m = line.match(PAGE_HEADING)
-    if (m) {
-      out.push(make(body.join('\n'), page))
-      page = m[1]
+    const next = headingOf(line)
+    if (next) {
+      out.push(make(body.join('\n'), current))
+      current = next
       body = []
     } else body.push(line)
   }
-  out.push(make(body.join('\n'), page))
-  return { highlights: out.filter((h): h is Highlight => !!h), skipped: false }
+  out.push(make(body.join('\n'), current))
+  return { highlights: out.filter((h): h is Highlight => !!h) }
 }
 
 const pageOrder = (q: ImportQuote) => Number.parseInt(q.page ?? '', 10) || Number.MAX_SAFE_INTEGER
@@ -218,6 +258,7 @@ export function buildReview(all: Highlight[]): Review {
   for (const h of items) {
     const book = books.get(bookKey(h)) ?? { title: h.title, author: '', date: '', quotes: [] }
     book.author ||= h.author
+    book.date ||= h.bookDate ?? ''
     books.set(bookKey(h), book)
     book.quotes.push({
       text: h.text,
