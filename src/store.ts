@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { deleteBooks, deleteQuotes, loadAll, newId, putBooks, putQuotes } from './db'
+import { planImport, type ImportFile, type ImportPlan } from './importFile'
 import { isSample, sampleLibrary } from './samples'
 import { loadSyncConfig, sync } from './sync'
 import type { Book, Collection, Quote } from './types'
@@ -155,11 +156,31 @@ export function useStore() {
     setAll(await loadAll())
   }, [])
 
+  const previewImport = useCallback(async (file: ImportFile) => {
+    const c = await loadAll()
+    // Samples are throwaway: a real quote shouldn't count as a duplicate of one.
+    return planImport(
+      file,
+      { ...c, books: c.books.filter((b) => !isSample(b.id)), quotes: c.quotes.filter((q) => !isSample(q.id)) },
+      Date.now(),
+    )
+  }, [])
+
+  const applyImport = useCallback(
+    async (plan: ImportPlan) => {
+      await putBooks(plan.books)
+      await putQuotes(plan.quotes)
+      setAll(await loadAll())
+      scheduleSync()
+    },
+    [scheduleSync],
+  )
+
   const hasSamples = useMemo(() => all.quotes.some((q) => isSample(q.id)), [all.quotes])
 
   return {
     ready, books, bookMap, quotes, saveBook, updateBook, saveQuote, updateQuote, deleteQuote,
-    syncState, runSync, loadSamples, removeSamples, hasSamples,
+    syncState, runSync, loadSamples, removeSamples, hasSamples, previewImport, applyImport,
   }
 }
 

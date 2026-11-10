@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   BookCover,
   EditableQuote,
@@ -15,6 +15,7 @@ import {
 } from './components'
 import { reflow, tidy } from './format'
 import { Icon } from './icons'
+import { parseImportFile, type ImportPlan } from './importFile'
 import { haptic, markTransition, morphName, morphSource } from './motion'
 import { currentBookId, type Store } from './store'
 import { loadSyncConfig, saveSyncConfig, testConfig, type SyncConfig } from './sync'
@@ -279,6 +280,26 @@ export function Settings({ store }: { store: Store }) {
   const [cfg, setCfg] = useState<SyncConfig>(existing ?? { owner: '', repo: 'commonplace-data', path: 'quotes.json', token: '' })
   const [msg, setMsg] = useState('')
   const set = (k: keyof SyncConfig) => (e: React.ChangeEvent<HTMLInputElement>) => setCfg({ ...cfg, [k]: e.target.value.trim() })
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [plan, setPlan] = useState<ImportPlan | null>(null)
+  const [importMsg, setImportMsg] = useState('')
+
+  const chooseImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0]
+    e.target.value = '' // so picking the same file again still fires
+    if (!picked) return
+    setPlan(null)
+    try {
+      const next = await store.previewImport(parseImportFile(await picked.text()))
+      const already = next.skipped ? ` ${next.skipped} already here will be skipped.` : ''
+      if (next.quotes.length) {
+        setPlan(next)
+        setImportMsg(`Ready to add ${next.quotes.length} quotes and ${next.books.length} new books.${already}`)
+      } else setImportMsg(`Nothing new to add.${already}`)
+    } catch (err) {
+      setImportMsg((err as Error).message)
+    }
+  }
 
   const s = store.syncState
   const status =
@@ -362,6 +383,32 @@ export function Settings({ store }: { store: Store }) {
           <Row destructive label="Remove sample quotes" onClick={store.removeSamples} />
         ) : (
           <Row tint label="Load sample quotes" onClick={store.loadSamples} />
+        )}
+      </Group>
+
+      <Group header="Import" footer={importMsg || 'Adds quotes from a reviewed import file. Quotes you already have are skipped.'}>
+        <input ref={fileInput} type="file" accept=".json,application/json" hidden onChange={chooseImport} />
+        {plan ? (
+          <>
+            <Row
+              tint
+              label={`Add ${plan.quotes.length} quotes`}
+              onClick={async () => {
+                await store.applyImport(plan)
+                setImportMsg(`Added ${plan.quotes.length} quotes.`)
+                setPlan(null)
+              }}
+            />
+            <Row
+              label="Cancel"
+              onClick={() => {
+                setPlan(null)
+                setImportMsg('')
+              }}
+            />
+          </>
+        ) : (
+          <Row tint label="Choose import file" onClick={() => fileInput.current?.click()} />
         )}
       </Group>
 
