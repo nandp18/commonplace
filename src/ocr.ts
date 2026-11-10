@@ -1,4 +1,5 @@
 import { createWorker, PSM, type Worker } from 'tesseract.js'
+import { readWithChandra } from './chandra'
 import { applyWarp, findSkew, inkFrom, mapWords, measureWarp, preferFlat, unflatten } from './flatten'
 import { reflow, tidy } from './format'
 import { lineHeight, nearestWord, type OcrWord, type Range } from './selection'
@@ -139,11 +140,16 @@ function flattenPhoto(img: HTMLImageElement) {
 
 /**
  * Read every word on the page with its position (in original photo pixels).
- * Gujarati pages are read as photographed and again flattened, keeping the better read.
+ * Gujarati pages try Chandra first. On the phone they're read as photographed and again
+ * flattened, keeping the better read.
  */
 export async function readPage(img: HTMLImageElement, lang: Lang, progress: Progress): Promise<OcrWord[]> {
   const W = img.naturalWidth, H = img.naturalHeight
   if (lang !== 'guj') return readWords(img, W, H, lang, progress)
+  // Chandra reads Gujarati far better; anything going wrong (offline, out of credit) lands on Tesseract.
+  const chandra = await readWithChandra(img, progress).catch(() => [])
+  if (chandra.length > 0) return chandra
+  progress(0)
   const plain = await readWords(img, W, H, lang, (p) => progress(p / 2))
   try {
     const page = flattenPhoto(img)
