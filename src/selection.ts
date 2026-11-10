@@ -178,11 +178,27 @@ export function trimStrayParagraphs(words: OcrWord[], [s, e]: Range): Range {
   return [s, e]
 }
 
+/** A short all-caps line at the top of a selection is a chapter or page heading, not the passage. */
+export function trimHeading(words: OcrWord[], [s, e]: Range): Range {
+  for (;;) {
+    let end = s
+    while (end < e && words[end + 1].line === words[s].line) end++
+    const wholeLine = s === 0 || words[s - 1].line !== words[s].line
+    if (!wholeLine || end - s + 1 > 8 || e - end < 4 || endsSentence(words[end])) return [s, e]
+    if (/^[a-z]/.test(words[end + 1].text)) return [s, e] // the sentence carries on, so not a heading
+    const text = words.slice(s, end + 1).map((w) => w.text).join('')
+    const upper = (text.match(/[A-Z]/g) ?? []).length
+    const lower = (text.match(/[a-z]/g) ?? []).length
+    if (upper < 4 || lower > upper * 0.2) return [s, e]
+    s = end + 1
+  }
+}
+
 export function selectRange(words: OcrWord[], stroke: Pt[]): Range | null {
   const hits = hitTest(words, stroke)
   if (hits.length === 0) return null
   const range = trimStrayParagraphs(words, [Math.min(...hits), Math.max(...hits)])
-  return snapToSentences(words, range)
+  return trimHeading(words, snapToSentences(words, range))
 }
 
 /** Nearest word to a point; used by the drag handles. */

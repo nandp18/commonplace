@@ -5,7 +5,7 @@ import type { OcrWord, Range } from './selection'
  * Pure functions, so they also run on typed or pasted quotes.
  */
 
-const SENTENCE_END = /[.!?।…][”’"')\]]*$/
+const SENTENCE_END = /[.!?।॥…][”’"')\]]*$/
 const GUJARATI = /[\u0A80-\u0AFF]/
 const LATIN = /[A-Za-z]/
 
@@ -67,8 +67,18 @@ export interface Formatted {
   uncertain: string[]
 }
 
-export function formatSelection(words: OcrWord[], [s, e]: Range): Formatted {
-  const picked = words.slice(s, e + 1).filter((w) => !isJunk(w))
+const meanConf = (ws: OcrWord[]) => ws.reduce((a, w) => a + w.conf, 0) / Math.max(1, ws.length)
+
+/** Use the closer second read only if it's more confident and clearly saw the same words. */
+export function sharperRead(first: OcrWord[], second: OcrWord[]): OcrWord[] | undefined {
+  const ratio = second.length / Math.max(1, first.length)
+  if (ratio < 0.75 || ratio > 1.3) return undefined
+  return meanConf(second) > meanConf(first) ? second : undefined
+}
+
+export function formatSelection(words: OcrWord[], [s, e]: Range, reread?: OcrWord[]): Formatted {
+  const first = words.slice(s, e + 1)
+  const picked = ((reread && sharperRead(first, reread)) ?? first).filter((w) => !isJunk(w))
   if (picked.length === 0) return { text: '', uncertain: [] }
 
   const paras: string[] = []
@@ -77,7 +87,8 @@ export function formatSelection(words: OcrWord[], [s, e]: Range): Formatted {
     const w = picked[i], prev = picked[i - 1]
     const word = w.text.trim()
     if (!prev) cur = word
-    else if (w.para !== prev.para) {
+    else if (w.para !== prev.para && SENTENCE_END.test(cur)) {
+      // Phone photos often get false paragraph breaks mid-sentence; only trust one after a full stop.
       paras.push(cur)
       cur = word
     } else if (w.line !== prev.line && /[A-Za-z][-‐]$/.test(cur) && /^[a-z]/.test(word)) {
@@ -89,7 +100,8 @@ export function formatSelection(words: OcrWord[], [s, e]: Range): Formatted {
 
   // Mark a quote that starts or stops mid-sentence, as you would when copying by hand.
   const before = words[s - 1]
-  if (before && before.para === words[s].para && !SENTENCE_END.test(before.text)) {
+  const afterHeading = !!before && /[A-Z]{2}/.test(before.text) && !/[a-z]/.test(before.text)
+  if (before && before.para === words[s].para && !SENTENCE_END.test(before.text) && !afterHeading) {
     text = '…' + text
   }
   const after = words[e + 1]

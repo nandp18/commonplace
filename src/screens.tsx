@@ -14,13 +14,17 @@ import {
   Segmented,
 } from './components'
 import { reflow, tidy } from './format'
+import { ShareSheet } from './ShareSheet'
 import { Icon } from './icons'
 import { parseImportFile, type ImportPlan } from './importFile'
 import { haptic, markTransition, morphName, morphSource } from './motion'
 import { currentBookId, type Store } from './store'
 import { loadSyncConfig, saveSyncConfig, testConfig, type SyncConfig } from './sync'
 import type { Lang } from './types'
-import { byPage, download, toCsv, toMarkdown } from './util'
+import { isSample } from './samples'
+import { byPage, download, toBackup, toCsv, toMarkdown } from './util'
+
+const BACKUP_KEY = 'commonplace.lastBackup'
 
 function SettingsButton({ store }: { store: Store }) {
   const k = store.syncState.kind
@@ -184,12 +188,17 @@ export function BookView({ store, id }: { store: Store; id: string }) {
 export function QuoteView({ store, id }: { store: Store; id: string }) {
   const quote = store.quotes.find((q) => q.id === id)
   const [copied, setCopied] = useState(false)
+  const [sharing, setSharing] = useState(false)
   if (!quote) return <Page title="" back="#/">{null}</Page>
   const book = quote.bookId ? store.bookMap.get(quote.bookId) : undefined
   const credit = [book?.title, book?.author, quote.page && `p. ${quote.page}`].filter(Boolean).join(', ')
   const shareText = `“${quote.text}”${credit ? `\n— ${credit}` : ''}`
   const copy = async () => {
-    await navigator.clipboard?.writeText(shareText)
+    try {
+      await navigator.clipboard.writeText(shareText)
+    } catch {
+      return // Nothing was copied, so don't say it was.
+    }
     haptic('success')
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
@@ -204,14 +213,13 @@ export function QuoteView({ store, id }: { store: Store; id: string }) {
       back={back}
       trailing={
         <GlassGroup>
-          {'share' in navigator && (
-            <GlassButton icon="share" ariaLabel="Share" onClick={() => navigator.share({ text: shareText }).catch(() => {})} />
-          )}
-          <GlassButton icon={copied ? 'check' : 'copy'} animate={copied} ariaLabel="Copy" onClick={copy} />
+          <GlassButton icon="share" ariaLabel="Share" onClick={() => setSharing(true)} />
+          <GlassButton icon={copied ? 'check' : 'copy'} animate={copied} ariaLabel={copied ? 'Copied' : 'Copy'} onClick={copy} className={copied ? 'copied' : ''} />
         </GlassGroup>
       }
     >
-      <article className="quote-hero">
+      <ShareSheet open={sharing} onClose={() => setSharing(false)} quote={quote} book={book} shareText={shareText} />
+      <article className={`quote-hero ${copied ? 'copied' : ''}`}>
         <EditableQuote store={store} quote={quote} large morph={morphName('quote', quote.id, 'detail')} />
       </article>
       <div className="rise-in">
@@ -276,7 +284,8 @@ export function NewQuote({ store }: { store: Store }) {
 }
 
 const importSummary = (plan: ImportPlan) =>
-  [plan.quotes.length && `${plan.quotes.length} quotes`, plan.covers && `${plan.covers} covers`].filter(Boolean).join(' and ')
+  [plan.quotes.length && `${plan.quotes.length} quotes`, plan.covers && `${plan.covers} covers`].filter(Boolean).join(' and ') ||
+  `${plan.books.length} books`
 
 export function Settings({ store }: { store: Store }) {
   const existing = loadSyncConfig()
@@ -295,7 +304,7 @@ export function Settings({ store }: { store: Store }) {
     try {
       const next = await store.previewImport(parseImportFile(await picked.text()))
       const already = next.skipped ? ` ${next.skipped} already here will be skipped.` : ''
-      if (next.quotes.length || next.covers) {
+      if (next.quotes.length || next.books.length || next.covers) {
         setPlan(next)
         setImportMsg(`Ready to add ${importSummary(next)}.${already}`)
       } else setImportMsg(`Nothing new to add.${already}`)
@@ -304,6 +313,7 @@ export function Settings({ store }: { store: Store }) {
     }
   }
 
+  const [backedUp, setBackedUp] = useState(() => Number(localStorage.getItem(BACKUP_KEY)) || 0)
   const s = store.syncState
   const status =
     s.kind === 'off'
@@ -389,7 +399,7 @@ export function Settings({ store }: { store: Store }) {
         )}
       </Group>
 
-      <Group header="Import" footer={importMsg || 'Adds quotes from a reviewed import file. Quotes you already have are skipped.'}>
+      <Group header="Import" footer={importMsg || 'Restores a backup, or adds quotes from an import file. Quotes you already have are skipped.'}>
         <input ref={fileInput} type="file" accept=".json,application/json" hidden onChange={chooseImport} />
         {plan ? (
           <>
@@ -411,11 +421,30 @@ export function Settings({ store }: { store: Store }) {
             />
           </>
         ) : (
-          <Row tint label="Choose import file" onClick={() => fileInput.current?.click()} />
+          <Row tint label="Restore or import a file" onClick={() => fileInput.current?.click()} />
         )}
       </Group>
 
-      <Group header="Export" footer={`${store.quotes.length} quotes from ${store.books.length} books.`}>
+      <Group
+        header="Export"
+        footer={`${store.quotes.length} quotes from ${store.books.length} books. ${
+          backedUp ? `Last backup ${new Date(backedUp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.` : 'No backup saved from this device yet.'
+        } Only a backup can be restored here.`}
+      >
+        <Row
+          icon="share"
+          label="Save a backup"
+          tint
+          onClick={async () => {
+            const realQuotes = store.quotes.filter((q) => !isSample(q.id))
+            const realBooks = store.books.filter((b) => !isSample(b.id))
+            const name = `commonplace-backup-${new Date().toISOString().slice(0, 10)}.json`
+            if (!(await download(name, JSON.stringify(toBackup(realQuotes, realBooks), null, 1), 'application/json'))) return
+            const now = Date.now()
+            localStorage.setItem(BACKUP_KEY, String(now))
+            setBackedUp(now)
+          }}
+        />
         <Row
           icon="share"
           label="Export as Markdown"

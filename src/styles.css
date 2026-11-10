@@ -82,7 +82,7 @@ main.full { padding: 0; }
 .glass-button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none;
   height: 46px; color: var(--text); font-size: 16px; font-weight: 500; cursor: pointer;
-  transition: transform 0.35s var(--spring), filter 0.2s;
+  transition: transform 0.35s var(--spring), filter 0.2s, color 0.3s;
 }
 .glass-button.circle { width: 46px; border-radius: 50%; }
 .glass-button.capsule { padding: 0 18px; border-radius: 23px; }
@@ -305,6 +305,19 @@ main.full { padding: 0; }
 
 /* Quote detail */
 .quote-hero { padding: 14px 0 10px; }
+.quote-hero .quote-text, .quote-hero .translit { transition: color 0.55s ease; transform-origin: left center; }
+.quote-hero.copied .quote-text, .quote-hero.copied .translit { color: var(--green); opacity: 1; transition-duration: 0.18s; animation: copied-pop 0.5s var(--spring); }
+.glass-button.copied { color: var(--green); }
+@keyframes copied-pop { 35% { transform: scale(1.018); } }
+.translit { margin: 8px 0 0 0.55em; font-family: var(--serif); font-size: 15.5px; line-height: 1.45; color: var(--text); opacity: 0.58; white-space: pre-line; text-wrap: pretty; }
+.translit.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.quote-hero .translit { font-size: 18px; margin-top: 12px; }
+.card-maker { display: flex; flex-direction: column; align-items: center; }
+.card-preview { display: block; width: auto; max-width: 100%; height: min(50dvh, 430px); aspect-ratio: 4 / 5; border-radius: 16px; box-shadow: 0 10px 30px rgba(20, 18, 12, 0.22); }
+.card-options { justify-content: center; margin: 18px 0 14px; }
+.card-send { width: 100%; height: 50px; border-radius: 25px; font-size: 17px; }
+.card-send:disabled { opacity: 0.45; }
+.card-as-text { margin-top: 12px; color: var(--secondary); }
 .editable { display: block; text-align: left; cursor: text; border-radius: 18px; margin: -10px -12px; padding: 10px 12px; width: calc(100% + 24px); transition: background 0.2s; }
 .editable:active { background: var(--field); }
 .quote-editor {

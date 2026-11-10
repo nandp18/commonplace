@@ -68,6 +68,12 @@ export function useStore() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [runSync])
 
+  // Ask the browser not to clear this library when it's short on space or the app sits unused.
+  const hasQuotes = all.quotes.length > 0
+  useEffect(() => {
+    if (hasQuotes) navigator.storage?.persist?.().catch(() => {})
+  }, [hasQuotes])
+
   const books = useMemo(
     () => all.books.filter((b) => !b.deleted).sort((a, b) => a.title.localeCompare(b.title)),
     [all.books],

@@ -1,6 +1,6 @@
 import { createWorker, PSM, type Worker } from 'tesseract.js'
 import { reflow, tidy } from './format'
-import type { OcrWord } from './selection'
+import { lineHeight, nearestWord, type OcrWord, type Range } from './selection'
 import type { Lang } from './types'
 
 export interface Box {
@@ -121,6 +121,52 @@ export async function readPage(img: HTMLImageElement, lang: Lang, progress: Prog
   } finally {
     onProgress = null
   }
+}
+
+/**
+ * The page read is shrunk to stay quick. Once you've chosen a passage, read just those
+ * lines at full sharpness, enlarged to the size Tesseract does best with.
+ */
+export async function rereadSelection(img: HTMLImageElement, words: OcrWord[], [s, e]: Range, lang: Lang): Promise<OcrWord[]> {
+  const picked = words.slice(s, e + 1)
+  const lh = lineHeight(picked)
+  const x = Math.max(0, Math.min(...picked.map((w) => w.x0)) - lh * 0.5)
+  const y = Math.max(0, Math.min(...picked.map((w) => w.y0)) - lh * 0.3)
+  const box = {
+    x,
+    y,
+    w: Math.min(img.naturalWidth, Math.max(...picked.map((w) => w.x1)) + lh * 0.5) - x,
+    h: Math.min(img.naturalHeight, Math.max(...picked.map((w) => w.y1)) + lh * 0.3) - y,
+  }
+  const enlarge = Math.max(1, Math.min(3, 48 / lh))
+  const { canvas, scale } = preprocess(img, box, Math.min(3000, box.w * enlarge))
+
+  // White out neighbours inside the crop: the start of the first line, the end of the last.
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#fff'
+  words.forEach((w, i) => {
+    if (i < s || i > e) ctx.fillRect((w.x0 - box.x) * scale - 2, (w.y0 - box.y) * scale - 2, (w.x1 - w.x0) * scale + 4, (w.y1 - w.y0) * scale + 4)
+  })
+
+  const worker = await getWorker(lang)
+  await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: '1' })
+  const { data } = await worker.recognize(canvas, {}, { blocks: true, text: false })
+  const out: OcrWord[] = []
+  let line = 0
+  for (const b of data.blocks ?? [])
+    for (const p of b.paragraphs)
+      for (const l of p.lines) {
+        for (const w of l.words) {
+          if (!w.text.trim()) continue
+          const x0 = box.x + w.bbox.x0 / scale, y0 = box.y + w.bbox.y0 / scale
+          const x1 = box.x + w.bbox.x1 / scale, y1 = box.y + w.bbox.y1 / scale
+          // A single block has no paragraphs of its own, so borrow them from the page read.
+          const para = picked[nearestWord(picked, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 })].para
+          out.push({ text: w.text, conf: w.confidence, x0, y0, x1, y1, line, para })
+        }
+        line++
+      }
+  return out
 }
 
 /** Mean word confidence. Reading with the wrong language model scores far lower (~35 vs ~90). */

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { bare, isGujarati, tidy } from './format'
+import { transliterate } from './transliterate'
 import { Icon, type IconName } from './icons'
 import { haptic, markTransition, morphName, useReveal } from './motion'
 import { setPendingPhoto } from './pending'
@@ -28,7 +29,9 @@ export function GlassButton({
   disabled,
   ariaLabel,
   animate,
+  className = '',
 }: {
+  className?: string
   icon?: IconName
   label?: string
   animate?: boolean
@@ -39,7 +42,7 @@ export function GlassButton({
   disabled?: boolean
   ariaLabel?: string
 }) {
-  const cls = `glass-button glass ${label ? 'capsule' : 'circle'} ${prominent ? 'prominent-glass' : ''} ${destructive ? 'destructive' : ''}`
+  const cls = `glass-button glass ${label ? 'capsule' : 'circle'} ${prominent ? 'prominent-glass' : ''} ${destructive ? 'destructive' : ''} ${className}`
   const body = (
     <>
       {icon && <Icon name={icon} size={label ? 18 : 21} animate={animate} />}
@@ -194,15 +197,22 @@ export function QuoteText({
   }
 
   return (
-    <div
-      className={`quote-text ${gu ? 'gu' : ''} ${quoted ? 'quoted' : ''} ${reveal ? 'revealing' : ''} ${className}`}
-      lang={gu ? 'gu' : 'en'}
-      style={morph ? ({ viewTransitionName: morph } as React.CSSProperties) : undefined}
-    >
-      {text.split(/\n{2,}/).map((p, i) => (
-        <p key={i}>{renderPara(p)}</p>
-      ))}
-    </div>
+    <>
+      <div
+        className={`quote-text ${gu ? 'gu' : ''} ${quoted ? 'quoted' : ''} ${reveal ? 'revealing' : ''} ${className}`}
+        lang={gu ? 'gu' : 'en'}
+        style={morph ? ({ viewTransitionName: morph } as React.CSSProperties) : undefined}
+      >
+        {text.split(/\n{2,}/).map((p, i) => (
+          <p key={i}>{renderPara(p)}</p>
+        ))}
+      </div>
+      {gu && (
+        <div className={`translit ${className.includes('clamp') ? 'clamp' : ''}`} lang="gu-Latn">
+          {transliterate(text)}
+        </div>
+      )}
+    </>
   )
 }
 

@@ -4,7 +4,7 @@ import { haptic } from './motion'
 import { PageArt } from './screens'
 import { formatSelection } from './format'
 import { Icon } from './icons'
-import { readPage, readQuality, readRegion, warmUp, WRONG_LANGUAGE } from './ocr'
+import { readPage, readQuality, readRegion, rereadSelection, warmUp, WRONG_LANGUAGE } from './ocr'
 import { PageSelect } from './PageSelect'
 import { takePendingPhoto } from './pending'
 import { detectPageNumber, selectRange, type OcrWord, type Pt, type Range } from './selection'
@@ -110,7 +110,10 @@ export function Capture({ store }: { store: Store }) {
     setSaving(true)
     try {
       let text = '', uncertain: string[] = []
-      if (words && range) ({ text, uncertain } = formatSelection(words, range))
+      if (words && range) {
+        const sharper = await rereadSelection(img, words, range, lang).catch(() => undefined)
+        ;({ text, uncertain } = formatSelection(words, range, sharper))
+      }
       if (!text && stroke) {
         // Nothing to snap to: read just the region that was marked.
         const xs = stroke.map((p) => p.x), ys = stroke.map((p) => p.y)

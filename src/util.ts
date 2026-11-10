@@ -1,3 +1,4 @@
+import type { ImportFile, ImportQuote } from './importFile'
 import type { Book, Quote } from './types'
 
 const norm = (s: string) => s.normalize('NFC').toLocaleLowerCase()
@@ -63,18 +64,52 @@ export function toCsv(quotes: Quote[], books: Map<string, Book>): string {
   return '\uFEFF' + rows.map((r) => r.map(esc).join(',')).join('\r\n')
 }
 
-export async function download(filename: string, content: string, type: string) {
+/** A full copy of the library, in the format Settings → Import reads back. */
+export function toBackup(quotes: Quote[], books: Book[]): ImportFile {
+  const date = (t: number) => new Date(t).toISOString()
+  const entry = (q: Quote): ImportQuote => ({
+    text: q.text,
+    date: date(q.createdAt),
+    lang: q.lang,
+    tags: q.tags,
+    ...(q.page ? { page: q.page } : {}),
+    ...(q.note ? { note: q.note } : {}),
+  })
+  const known = new Set(books.map((b) => b.id))
+  const loose = quotes.filter((q) => !q.bookId || !known.has(q.bookId))
+  return {
+    version: 1,
+    books: [
+      ...books.map((b) => {
+        const own = quotes.filter((q) => q.bookId === b.id).map(entry)
+        return {
+          title: b.title,
+          author: b.author,
+          date: date(b.createdAt),
+          ...(b.cover?.startsWith('https://') ? { cover: b.cover } : {}),
+          ...(own.length ? {} : { keepEmpty: true }),
+          quotes: own,
+        }
+      }),
+      ...(loose.length ? [{ title: '', author: '', quotes: loose.map(entry) }] : []),
+    ],
+  }
+}
+
+/** Shares the file where the device can, otherwise downloads it. False if you cancelled. */
+export async function download(filename: string, content: BlobPart, type: string): Promise<boolean> {
   const file = new File([content], filename, { type })
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] })
-      return
+      return true
     } catch (e) {
-      if ((e as Error).name === 'AbortError') return
+      if ((e as Error).name === 'AbortError') return false
     }
   }
   const url = URL.createObjectURL(file)
   const a = Object.assign(document.createElement('a'), { href: url, download: filename })
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return true
 }

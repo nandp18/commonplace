@@ -24,6 +24,8 @@ export interface ImportBook {
   date?: string
   /** Link to a cover image. Also fills in books already in the library. */
   cover?: string
+  /** Create this book even with no quotes. Backups set it; a covers-only file doesn't. */
+  keepEmpty?: boolean
   quotes: ImportQuote[]
 }
 
@@ -149,6 +151,15 @@ export function planImport(file: ImportFile, existing: Collection, now: number):
         createdAt,
         updatedAt: now,
       })
+    }
+
+    // A book you've added but not quoted yet still belongs in a restored library.
+    if (titleKey && book.keepEmpty && !bookIds.has(titleKey)) {
+      const id = `import-${hash(titleKey)}`
+      if (!existing.books.some((b) => b.id === id)) {
+        bookIds.set(titleKey, id)
+        books.set(id, { id, title: book.title.trim(), author: (book.author ?? '').trim(), createdAt: fallback ?? now, updatedAt: now })
+      }
     }
 
     const bookId = titleKey ? bookIds.get(titleKey) : undefined

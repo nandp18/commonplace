@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host",
-    "test": "node tests/selection.test.ts && node tests/sync.test.ts && node tests/import.test.ts && node tests/tide.test.ts"
+    "test": "node tests/selection.test.ts && node tests/sync.test.ts && node tests/import.test.ts && node tests/tide.test.ts && node tests/transliterate.test.ts && node tests/shareCard.test.ts && node tests/capture.test.ts && node tests/backup.test.ts"
   },
   "dependencies": {
     "react": "^19.3.0",
