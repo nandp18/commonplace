@@ -1,3 +1,4 @@
+import { createSea, pitchForHorizon } from './glsea'
 import { haptic, reducedMotion } from './motion'
 
 /**
@@ -118,13 +119,14 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
   // ── The stage. ──
   const overlay = el('div', 'ceremony')
   const night = el('div', 'ceremony-night')
+  const glCanvas = el('canvas', 'ceremony-sea')
   const canvas = el('canvas', 'ceremony-sea')
   const world = el('div', 'ceremony-world')
   const vignette = el('div', 'ceremony-vignette')
   const flash = el('div', 'ceremony-flash')
   const barTop = el('div', 'ceremony-bar top')
   const barBottom = el('div', 'ceremony-bar bottom')
-  overlay.append(night, canvas, world, vignette, flash, barTop, barBottom)
+  overlay.append(night, glCanvas, canvas, world, vignette, flash, barTop, barBottom)
   document.body.append(overlay)
   overlay.addEventListener('pointerdown', () => {
     skipped = true
@@ -157,7 +159,7 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
   // ── The drop's fall, driven here so the camera can track it. ──
   let dropY = center.y
   let sinking: { t0: number } | null = null
-  const sea = startSea(canvas, W, H, surfaceY, () => sinking)
+  const sea = startSea(glCanvas, canvas, W, H, surfaceY, () => sinking)
 
   const drop = el('div', 'ceremony-drop')
   const halo = el('div', 'ceremony-halo')
@@ -200,6 +202,7 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
     barBottom.animate([{ transform: 'translateY(100%)' }, { transform: 'none' }], { duration: 900, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)', fill: 'both' })
     fade(night, 0, 1, 700)
     fade(vignette, 0, 1, 1200, 200)
+    fade(glCanvas, 0, 1, 1000, 300)
     fade(canvas, 0, 1, 1000, 300)
     words.forEach(({ c, color }, i) =>
       c.animate(
@@ -322,131 +325,56 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
 }
 
 /**
- * The night: stars far off (they barely move with the camera), and the sea, a halftone
- * lattice of pale dots on slow swells. A splash sends gold rings racing across the water,
- * lights the dots they pass and throws gold spray; then the drop sinks as a glowing mote.
+ * The night: a 3D sea under a low moon, printed in dots (glsea.ts), seen at the tilt that
+ * puts its horizon where the scene's camera says the horizon is. Over it, on a 2D canvas
+ * in the scene's own coordinates, the splash: a glow, gold spray, and the drop sinking as
+ * a glowing mote.
  */
-function startSea(canvas: HTMLCanvasElement, W: number, H: number, surfaceY: number, sinkingNow: () => { t0: number } | null) {
+/** The moon hangs off to the left, so the drop lands in dark water where its rings show. */
+const MOON: [number, number, number] = [-0.16, 0.12, 0.98]
+
+function startSea(glCanvas: HTMLCanvasElement, canvas: HTMLCanvasElement, W: number, H: number, surfaceY: number, sinkingNow: () => { t0: number } | null) {
+  const water = createSea(glCanvas)
   const dpr = Math.min(2, window.devicePixelRatio || 1)
   canvas.width = W * dpr
   canvas.height = H * dpr
   const ctx = canvas.getContext('2d')!
-  const GAP = 14
+  // The horizon sits a little beyond where the drop lands, so it lands in the water.
+  const horizonY = surfaceY - H * 0.2
   let seed = 7
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647
-  const stars = Array.from({ length: 90 }, () => ({ x: rand() * W * 1.4 - W * 0.2, y: rand() * H * 1.6 - H * 0.5, ph: rand() * 6.28, r: 0.35 + rand() * 0.9 }))
-  const ripples: { x: number; t0: number }[] = []
+  const splashes: { x: number; t0: number }[] = []
   const spray: { x: number; y: number; vx: number; vy: number; r: number }[] = []
   let last = 0
-  const RINGS = [0, 0.28, 0.56, 0.9]
-  const SPEED = 230
+  let cam: Cam = { x: W / 2, y: H / 2, s: 1 }
+  const t0 = performance.now()
 
-  const surface = (x: number, t: number) => surfaceY + 7 * Math.sin(x * 0.02 - t * 0.8) + 2.5 * Math.sin(x * 0.065 + t * 1.3)
-
-  /** How strongly the rings light a point, and how far they lift it. */
-  const stir = (x: number, y: number, now: number) => {
-    let light = 0, push = 0
-    for (const r of ripples) {
-      const age = (now - r.t0) / 1000
-      for (const k of RINGS) {
-        if (age <= k) continue
-        const R = (age - k) * SPEED, ry = R / 3.4
-        const band = (Math.hypot((x - r.x) / R, (y - surfaceY - 2 - ry) / ry) - 1) * R
-        if (Math.abs(band) > 34) continue
-        const a = Math.exp(-(age - k) * 0.9) * Math.cos((band / 34) * Math.PI * 0.5)
-        light += a
-        push += a * 5
-      }
-    }
-    return { light: Math.min(1, light), push }
-  }
-
-  const draw = (now: number, cam: Cam) => {
-    const t = now / 1000
+  const draw = (now: number, c: Cam) => {
+    cam = c
     const dt = Math.min(0.05, (now - (last || now)) / 1000)
     last = now
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, W, H)
-    const horizon = H / 2 + (surfaceY - cam.y) * cam.s
+    const horizon = H / 2 + (horizonY - c.y) * c.s
+    water?.render({ time: (now - t0) / 1000, pitch: Math.max(-0.7, Math.min(0.9, pitchForHorizon(horizon, H))), night: 1, drift: (now - t0) / 1000 * 0.4, sun: MOON })
 
-    // Stars, far away: a little parallax, and none below the horizon.
-    for (const s of stars) {
-      const sx = s.x - (cam.x - W / 2) * 0.12, sy = s.y - (cam.y - H / 2) * 0.12
-      if (sy > horizon - 12 || sy < -4 || sx < -4 || sx > W + 4) continue
-      ctx.fillStyle = `rgba(${CREAM}, ${0.22 + 0.25 * Math.sin(t * 1.3 + s.ph)})`
-      ctx.beginPath()
-      ctx.arc(sx, sy, s.r, 0, Math.PI * 2)
-      ctx.fill()
-    }
+    ctx.setTransform(dpr * c.s, 0, 0, dpr * c.s, dpr * (W / 2 - c.x * c.s), dpr * (H / 2 - c.y * c.s))
+    ctx.clearRect(c.x - W / c.s, c.y - H / c.s, (2 * W) / c.s, (2 * H) / c.s)
 
-    // Everything else is in the world, seen through the camera.
-    ctx.setTransform(dpr * cam.s, 0, 0, dpr * cam.s, dpr * (W / 2 - cam.x * cam.s), dpr * (H / 2 - cam.y * cam.s))
-    const x0 = cam.x - W / 2 / cam.s - GAP, x1 = cam.x + W / 2 / cam.s + GAP
-    const yBottom = cam.y + H / 2 / cam.s + GAP
-    if (surfaceY - 20 < yBottom) {
-      const step = GAP / 2.2
-      for (let x = Math.floor(x0 / step) * step; x <= x1; x += step) {
-        const y = surface(x, t)
-        const { light } = stir(x, y, now)
-        ctx.fillStyle = light > 0.05 ? `rgba(${GOLD}, ${0.5 + 0.5 * light})` : `rgba(${CREAM}, 0.55)`
-        ctx.beginPath()
-        ctx.arc(x, y, 1.4 + light * 1.2, 0, Math.PI * 2)
-        ctx.fill()
-      }
-      const rowGap = GAP * 0.8
-      for (let r = 0, y0 = surfaceY + 8; y0 < yBottom; r++, y0 += rowGap) {
-        const d = Math.min(1, (y0 - surfaceY) / (H * 0.7))
-        const start = Math.floor(x0 / GAP) * GAP + (r % 2 ? 0 : -GAP / 2)
-        for (let xg = start; xg < x1; xg += GAP) {
-          const ph = xg * 0.02 - t * 0.8 + d * 1.4
-          const A = 3.2 * Math.exp(-d * 2.2) + 0.3
-          const { light, push } = stir(xg, y0, now)
-          const x = xg + A * Math.cos(ph) * 0.7, y = y0 + A * Math.sin(ph) - push
-          if (y < surface(x, t) + 4) continue
-          const swell = Math.sin(xg * 0.02 - t * 0.8 - d * 2.4) * Math.exp(-d * 1.2)
-          const radius = 0.55 + 0.85 * (0.5 + 0.5 * swell) * (1 - d * 0.4) + light * 1.3
-          ctx.fillStyle =
-            light > 0.05
-              ? `rgba(${GOLD}, ${0.15 + 0.8 * light})`
-              : `rgba(${CREAM}, ${Math.max(0.05, 0.09 + 0.28 * Math.pow(1 - d, 1.5) + 0.05 * swell)})`
-          ctx.beginPath()
-          ctx.arc(x, y, radius, 0, Math.PI * 2)
-          ctx.fill()
-        }
-      }
-    }
-
-    // Rings racing out across the surface, flattened by the low angle.
-    for (const r of ripples) {
-      const age = (now - r.t0) / 1000
-      for (const k of RINGS) {
-        const a = age - k
-        if (a <= 0) continue
-        const rad = a * SPEED, alpha = 0.75 * Math.exp(-a * 1.1)
-        if (alpha < 0.02) continue
-        ctx.strokeStyle = `rgba(${GOLD}, ${alpha})`
-        ctx.lineWidth = 1.5 / cam.s
-        ctx.beginPath()
-        // Its far edge stays at the waterline; the near edge comes toward us.
-        ctx.ellipse(r.x, surfaceY + 2 + rad / 3.4, rad, rad / 3.4, 0, 0, Math.PI * 2)
-        ctx.stroke()
-      }
-      // And a glow where it went in.
-      const g = Math.max(0, 0.6 * Math.exp(-age * 1.1))
-      if (g > 0.01) {
-        const grad = ctx.createRadialGradient(r.x, surfaceY, 0, r.x, surfaceY, 200)
-        grad.addColorStop(0, `rgba(${GOLD}, ${g})`)
-        grad.addColorStop(1, `rgba(${GOLD}, 0)`)
-        ctx.fillStyle = grad
-        ctx.fillRect(r.x - 200, surfaceY - 200, 400, 400)
-      }
+    // A glow where it went in.
+    for (const sp of splashes) {
+      const g = Math.max(0, 0.55 * Math.exp(-((now - sp.t0) / 1000) * 1.1))
+      if (g < 0.01) continue
+      const grad = ctx.createRadialGradient(sp.x, surfaceY, 0, sp.x, surfaceY, 190)
+      grad.addColorStop(0, `rgba(${GOLD}, ${g})`)
+      grad.addColorStop(1, `rgba(${GOLD}, 0)`)
+      ctx.fillStyle = grad
+      ctx.fillRect(sp.x - 190, surfaceY - 190, 380, 380)
     }
 
     // The drop, sunk: a glowing mote drifting down into the dark.
     const sinking = sinkingNow()
     if (sinking) {
       const p = Math.min(1, (now - sinking.t0) / 2400)
-      const y = surfaceY + 14 + H * 0.34 * easeOut(p)
+      const y = surfaceY + 10 + H * 0.22 * easeOut(p)
       const x = W / 2 + 6 * Math.sin(p * 5)
       const a = 1 - p * 0.75
       const grad = ctx.createRadialGradient(x, y, 0, x, y, 26)
@@ -469,13 +397,18 @@ function startSea(canvas: HTMLCanvasElement, W: number, H: number, surfaceY: num
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
       ctx.fill()
     }
-    for (let i = spray.length - 1; i >= 0; i--) if (spray[i].vy > 0 && spray[i].y > surface(spray[i].x, t)) spray.splice(i, 1)
+    for (let i = spray.length - 1; i >= 0; i--) if (spray[i].vy > 0 && spray[i].y > surfaceY) spray.splice(i, 1)
   }
 
   return {
     draw,
     splash(x: number) {
-      ripples.push({ x, t0: performance.now() })
+      splashes.push({ x, t0: performance.now() })
+      // Rings on the water, one after another, from where it landed on screen.
+      const sx = W / 2 + (x - cam.x) * cam.s, sy = H / 2 + (surfaceY - cam.y) * cam.s
+      water?.ripple(sx, sy, 0.55)
+      water?.ripple(sx, sy, 0.38, 0.3)
+      water?.ripple(sx, sy, 0.25, 0.65)
       // A crown of spray, tallest in the middle, and a few fine droplets flung wide.
       for (let i = 0; i < 34; i++) {
         const u = i / 33 - 0.5
