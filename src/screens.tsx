@@ -17,6 +17,7 @@ import { reflow, tidy } from './format'
 import { ShareSheet } from './ShareSheet'
 import { Icon } from './icons'
 import { parseImportFile, type ImportPlan } from './importFile'
+import { fileIntoSea } from './drop'
 import { haptic, markTransition, morphName, morphSource } from './motion'
 import { currentBookId, type Store } from './store'
 import { loadSyncConfig, saveSyncConfig, testConfig, type SyncConfig } from './sync'
@@ -247,7 +248,11 @@ export function QuoteView({ store, id }: { store: Store; id: string }) {
 export function NewQuote({ store }: { store: Store }) {
   const [text, setText] = useState('')
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('commonplace.lang') as Lang) || 'eng')
+  const editor = useRef<HTMLTextAreaElement>(null)
+  const [filing, setFiling] = useState(false)
   const save = async () => {
+    if (filing) return
+    setFiling(true)
     const bookId = currentBookId()
     const q = await store.saveQuote({
       text: tidy(text),
@@ -255,11 +260,15 @@ export function NewQuote({ store }: { store: Store }) {
       tags: [],
       lang,
     })
-    go(`/quote/${q.id}`)
+    // The same ceremony as a captured quote: it gathers into a drop and falls into the sea.
+    editor.current?.blur() // put the keyboard away for the show
+    if (editor.current) await fileIntoSea(editor.current, q.id, () => go(`/?new=${q.id}`))
+    else go(`/?new=${q.id}`)
   }
   return (
     <Page title="New quote" back="#/">
       <textarea
+        ref={editor}
         className="quote-text quote-editor large compose"
         placeholder="Type or paste a passage…"
         autoFocus

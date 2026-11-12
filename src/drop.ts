@@ -1,13 +1,18 @@
 import { haptic, reducedMotion } from './motion'
 
 /**
- * Filing a quote, as a small ceremony. Night falls over the whole screen; the quote's
- * words glow gold and gather into a single drop; the drop hangs, shines, and falls into
- * a dark sea below, where it lands with gold ripples and spray. Then the night lifts on
- * the library, with the new drop already in its sea.
+ * Filing a quote, as a short film.
  *
- * Everything here is plain DOM on <body>, outside React, so it can play across the
- * change of screen. A tap anywhere skips to the end.
+ * Letterbox bars slide in and night falls. The camera pushes in on the quote as its words
+ * glow gold, then dollies in as they gather into a single drop, which shines. The drop lets
+ * go; the camera tilts down after it, pulling back as it falls a long way to reveal a dark
+ * ocean. Impact: the camera shakes, light flashes, gold spray crowns up and rings race
+ * across the water. The drop sinks, a glowing mote, into the depths, and the night lifts
+ * on the library, where the new drop is already in its sea.
+ *
+ * The scene is a "world" (DOM for the words and drop, a canvas for sea and sky) seen through
+ * one camera, so both move together. Plain DOM on <body>, outside React, so it plays
+ * across the change of screen. A tap anywhere skips to the end.
  */
 
 const GOLD = '232, 194, 122'
@@ -27,25 +32,81 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string) =>
   e.className = className
   return e
 }
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3)
 
-export async function fileIntoSea(filing: HTMLElement, id: string, navigate: () => void): Promise<void> {
+interface Cam {
+  x: number
+  y: number
+  s: number
+}
+
+/** Each word of the quote, where it is on screen and how it's styled. */
+interface Word {
+  text: string
+  r: DOMRect
+  style: Partial<CSSStyleDeclaration>
+}
+
+const TYPE_PROPS = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'color'] as const
+
+/** The words on screen: the quote's word spans, or, for a text box, its words laid out the same way. */
+function wordsIn(box: HTMLElement): Word[] {
+  const styleOf = (cs: CSSStyleDeclaration) => Object.fromEntries(TYPE_PROPS.map((p) => [p, cs[p]])) as Partial<CSSStyleDeclaration>
+  const spans = [...box.querySelectorAll<HTMLElement>('.quote-text .w')]
+  if (spans.length) return spans.map((w) => ({ text: w.textContent ?? '', r: w.getBoundingClientRect(), style: styleOf(getComputedStyle(w)) }))
+
+  const ta = box instanceof HTMLTextAreaElement ? box : box.querySelector('textarea')
+  if (ta) {
+    // A hidden twin of the text box with each word in a span, to find where each word sits.
+    const cs = getComputedStyle(ta), r = ta.getBoundingClientRect()
+    const twin = document.createElement('div')
+    for (const p of [...TYPE_PROPS, 'lineHeight', 'wordSpacing', 'textAlign', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'boxSizing'] as const)
+      twin.style[p] = cs[p]
+    Object.assign(twin.style, {
+      position: 'fixed', left: `${r.left}px`, top: `${r.top - ta.scrollTop}px`, width: `${r.width - 2}px`, // a text box keeps room for the caret at each line's end
+      borderStyle: 'solid', borderColor: 'transparent', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', visibility: 'hidden',
+    })
+    const spans: HTMLSpanElement[] = []
+    for (const tok of ta.value.split(/(\s+)/)) {
+      if (!tok) continue
+      if (/^\s+$/.test(tok)) twin.append(tok)
+      else {
+        const s = document.createElement('span')
+        s.textContent = tok
+        twin.append(s)
+        spans.push(s)
+      }
+    }
+    document.body.append(twin)
+    const style = styleOf(cs)
+    const words = spans
+      .map((s) => ({ text: s.textContent ?? '', r: s.getBoundingClientRect(), style }))
+      .filter((w) => w.r.bottom > r.top && w.r.top < r.bottom) // only what's showing in the box
+    twin.remove()
+    return words
+  }
+
+  const q = box.querySelector<HTMLElement>('.quote-text') ?? box
+  return [{ text: q.textContent ?? '', r: q.getBoundingClientRect(), style: styleOf(getComputedStyle(q)) }]
+}
+
+/**
+ * Play the ceremony for the quote shown in `source` (a filing card, or a text box),
+ * then call `navigate` underneath it and lift the night.
+ */
+export async function fileIntoSea(source: HTMLElement, id: string, navigate: () => void): Promise<void> {
   if (reducedMotion() || active) return navigate()
   active = true
   landed = null
   const W = innerWidth, H = innerHeight
-  const center = { x: W / 2, y: H * 0.36 }
-  const surfaceY = Math.round(H * 0.72)
+  const center = { x: W / 2, y: H * 0.38 } // where the drop forms, in world coordinates
+  const surfaceY = Math.round(H * 1.3) // the sea is far below: the camera has to travel to it
 
-  // A tap skips ahead: every animation jumps to its end and every pause is cut short.
+  // ── A tap skips to the end. ──
   let skipped = false
-  const anims: Animation[] = []
   let wakers: (() => void)[] = []
-  const play = (target: Element, frames: Keyframe[], opts: KeyframeAnimationOptions) => {
-    const a = target.animate(frames, { fill: 'forwards', ...opts })
-    anims.push(a)
-    if (skipped) a.finish()
-    return a
-  }
   const wait = (ms: number) =>
     skipped
       ? Promise.resolve()
@@ -54,276 +115,354 @@ export async function fileIntoSea(filing: HTMLElement, id: string, navigate: () 
           wakers.push(() => (clearTimeout(t), r()))
         })
 
+  // ── The stage. ──
   const overlay = el('div', 'ceremony')
   const night = el('div', 'ceremony-night')
   const canvas = el('canvas', 'ceremony-sea')
-  overlay.append(night, canvas)
+  const world = el('div', 'ceremony-world')
+  const vignette = el('div', 'ceremony-vignette')
+  const flash = el('div', 'ceremony-flash')
+  const barTop = el('div', 'ceremony-bar top')
+  const barBottom = el('div', 'ceremony-bar bottom')
+  overlay.append(night, canvas, world, vignette, flash, barTop, barBottom)
   document.body.append(overlay)
   overlay.addEventListener('pointerdown', () => {
     skipped = true
-    anims.forEach((a) => a.finish())
     wakers.forEach((w) => w())
     wakers = []
   })
-  const sea = startSea(canvas, W, H, surfaceY)
 
-  // The words lift off the card: each one is replaced by a copy floating over the night.
-  const box = filing.querySelector<HTMLElement>('.saved-quote') ?? filing
-  const sources = [...box.querySelectorAll<HTMLElement>('.quote-text .w')]
-  const parts = sources.length ? sources : [...box.querySelectorAll<HTMLElement>('.quote-text')]
-  const words = parts.map((w) => {
-    const r = w.getBoundingClientRect()
-    const cs = getComputedStyle(w)
+  // ── The camera: one transform for the DOM world and the canvas alike. ──
+  const cam: Cam = { x: W / 2, y: H / 2, s: 1 }
+  let tween: { from: Cam; to: Cam; t0: number; dur: number; ease: (t: number) => number } | null = null
+  let follow: ((now: number) => Cam) | null = null
+  let shake = { t0: 0, amp: 0 }
+  const camTo = (to: Partial<Cam>, dur: number, ease = easeInOut) => {
+    follow = null
+    tween = { from: { ...cam }, to: { ...cam, ...to }, t0: performance.now(), dur, ease }
+  }
+  const view = (now: number): Cam => {
+    if (follow) Object.assign(cam, follow(now))
+    else if (tween) {
+      const p = Math.min(1, (now - tween.t0) / tween.dur), e = tween.ease(p)
+      cam.x = lerp(tween.from.x, tween.to.x, e)
+      cam.y = lerp(tween.from.y, tween.to.y, e)
+      cam.s = lerp(tween.from.s, tween.to.s, e)
+      if (p >= 1) tween = null
+    }
+    const age = (now - shake.t0) / 1000, a = shake.amp * Math.exp(-age * 9)
+    return a > 0.1 ? { x: cam.x + a * Math.sin(age * 83), y: cam.y + a * Math.cos(age * 71), s: cam.s } : cam
+  }
+
+  // ── The drop's fall, driven here so the camera can track it. ──
+  let dropY = center.y
+  let sinking: { t0: number } | null = null
+  const sea = startSea(canvas, W, H, surfaceY, () => sinking)
+
+  const drop = el('div', 'ceremony-drop')
+  const halo = el('div', 'ceremony-halo')
+  const bead = el('div', 'ceremony-bead')
+  const ring = el('div', 'ceremony-ring')
+  drop.append(halo, ring, bead)
+  // Nothing shows until the words gather.
+  bead.style.transform = 'scale(0)'
+  halo.style.opacity = '0'
+  ring.style.opacity = '0'
+
+  let raf = 0
+  const frame = (now: number) => {
+    raf = requestAnimationFrame(frame)
+    const c = view(now)
+    world.style.transform = `translate(${W / 2}px, ${H / 2}px) scale(${c.s}) translate(${-c.x}px, ${-c.y}px)`
+    drop.style.transform = `translate(${center.x}px, ${dropY}px)`
+    sea.draw(now, c)
+  }
+  raf = requestAnimationFrame(frame)
+
+  // ── The words lift off the page into the world. ──
+  const box = source.querySelector<HTMLElement>('.saved-quote') ?? source
+  const words = wordsIn(box).map((w) => {
     const c = el('span', 'ceremony-word')
-    c.textContent = w.textContent
-    Object.assign(c.style, {
-      left: `${r.left}px`,
-      top: `${r.top}px`,
-      width: `${r.width}px`,
-      fontFamily: cs.fontFamily,
-      fontSize: cs.fontSize,
-      fontWeight: cs.fontWeight,
-      fontStyle: cs.fontStyle,
-      lineHeight: `${r.height}px`,
-      letterSpacing: cs.letterSpacing,
-      color: cs.color,
-    })
-    overlay.append(c)
-    return { c, r, color: cs.color }
+    c.textContent = w.text
+    Object.assign(c.style, w.style, { left: `${w.r.left}px`, top: `${w.r.top}px`, lineHeight: `${w.r.height}px` })
+    world.append(c)
+    return { c, r: w.r, color: w.style.color ?? '' }
   })
   box.style.visibility = 'hidden'
+  world.append(drop)
 
-  // 1. Night falls, and the words begin to glow.
-  play(night, [{ opacity: 0 }, { opacity: 1 }], { duration: 650, easing: 'ease-in-out' })
-  play(canvas, [{ opacity: 0 }, { opacity: 1 }], { duration: 900, delay: 250, easing: 'ease-out' })
-  words.forEach(({ c, color }, i) =>
-    play(
-      c,
-      [
-        { color, textShadow: `0 0 0 rgba(${GOLD}, 0)` },
-        { color: `rgb(${CREAM})`, textShadow: `0 0 14px rgba(${GOLD}, 0.6)` },
-      ],
-      { duration: 700, delay: 150 + Math.min(i * 12, 240), easing: 'ease' },
-    ),
-  )
-  await wait(950)
+  const fade = (e: Element, from: number, to: number, duration: number, delay = 0) =>
+    e.animate([{ opacity: from }, { opacity: to }], { duration, delay, fill: 'both', easing: 'ease-in-out' })
 
-  // 2. They gather into one drop of gold.
-  const spread = Math.min(420, words.length * 22)
-  const fly = 640
-  words.forEach(({ c, r }, i) => {
-    const dx = center.x - (r.left + r.width / 2), dy = center.y - (r.top + r.height / 2)
-    play(
-      c,
-      [
-        { transform: 'none', opacity: 1, filter: 'blur(0px)' },
-        { opacity: 1, offset: 0.7 },
-        { transform: `translate(${dx}px, ${dy}px) scale(0.08)`, opacity: 0, filter: 'blur(1.5px)' },
-      ],
-      {
-        duration: fly,
-        delay: words.length > 1 ? (i / (words.length - 1)) * spread : 0,
-        easing: 'cubic-bezier(0.55, 0, 0.75, 0.2)',
-      },
+  if (!skipped) {
+    // 1. Bars slide in, night falls, the words glow. The camera begins a slow push in.
+    barTop.animate([{ transform: 'translateY(-100%)' }, { transform: 'none' }], { duration: 900, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)', fill: 'both' })
+    barBottom.animate([{ transform: 'translateY(100%)' }, { transform: 'none' }], { duration: 900, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)', fill: 'both' })
+    fade(night, 0, 1, 700)
+    fade(vignette, 0, 1, 1200, 200)
+    fade(canvas, 0, 1, 1000, 300)
+    words.forEach(({ c, color }, i) =>
+      c.animate(
+        [
+          { color, textShadow: `0 0 0 rgba(${GOLD}, 0)` },
+          { color: `rgb(${CREAM})`, textShadow: `0 0 16px rgba(${GOLD}, 0.7)` },
+        ],
+        { duration: 700, delay: 150 + Math.min(i * 14, 300), easing: 'ease', fill: 'both' },
+      ),
     )
-  })
-  const drop = el('div', 'ceremony-drop')
-  drop.style.left = `${center.x}px`
-  drop.style.top = `${center.y}px`
-  const bead = el('div', 'ceremony-bead')
-  const halo = el('div', 'ceremony-halo')
-  drop.append(halo, bead)
-  overlay.append(drop)
-  play(
-    bead,
-    [
-      { transform: 'scale(0)' },
-      { transform: 'scale(0.6)', offset: 0.6 },
-      { transform: 'scale(1.2, 0.86)', offset: 0.88 },
-      { transform: 'scale(0.95, 1.05)', offset: 0.95 },
-      { transform: 'scale(1)' },
-    ],
-    { duration: spread + fly + 180, delay: 120, easing: 'ease-out', fill: 'both' },
-  )
-  play(halo, [{ opacity: 0, transform: 'scale(0.3)' }, { opacity: 1, transform: 'scale(1)' }], {
-    duration: spread + fly,
-    delay: 200,
-    easing: 'ease-out',
-    fill: 'both',
-  })
-  await wait(spread + fly + 240)
+    const quoteMid = words.length ? (Math.min(...words.map((w) => w.r.top)) + Math.max(...words.map((w) => w.r.bottom))) / 2 : center.y
+    camTo({ y: lerp(H / 2, quoteMid, 0.35), s: 1.07 }, 1400, easeInOut)
+    await wait(1000)
+  }
 
-  // 3. It shines: a pulse, and a ring of light going out from it.
-  haptic('tap')
-  const ring = el('div', 'ceremony-ring')
-  drop.append(ring)
-  // Grown by size rather than scale, so its line stays hairline-thin as it spreads.
-  play(
-    ring,
-    [
-      { opacity: 0.9, width: '12px', height: '12px', left: '-6px', top: '-6px' },
-      { opacity: 0, width: '220px', height: '220px', left: '-110px', top: '-110px' },
-    ],
-    { duration: 1000, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' },
-  )
-  play(bead, [{ transform: 'scale(1)' }, { transform: 'scale(1.22)', offset: 0.35 }, { transform: 'scale(1)' }], { duration: 520, easing: 'ease-in-out', composite: 'replace' })
-  play(halo, [{ transform: 'scale(1)' }, { transform: 'scale(1.6)', offset: 0.35 }, { transform: 'scale(1)' }], { duration: 520, easing: 'ease-in-out' })
-  await wait(620)
+  if (!skipped) {
+    // 2. The words gather into one drop of gold; the camera dollies in on it.
+    const spread = Math.min(460, words.length * 24)
+    const fly = 680
+    words.forEach(({ c, r }, i) => {
+      const dx = center.x - (r.left + r.width / 2), dy = center.y - (r.top + r.height / 2)
+      c.animate(
+        [
+          { transform: 'none', opacity: 1, filter: 'blur(0px)' },
+          { opacity: 1, offset: 0.72 },
+          { transform: `translate(${dx}px, ${dy}px) scale(0.06)`, opacity: 0, filter: 'blur(1.5px)' },
+        ],
+        { duration: fly, delay: words.length > 1 ? (i / (words.length - 1)) * spread : 0, easing: 'cubic-bezier(0.55, 0, 0.75, 0.2)', fill: 'forwards' },
+      )
+    })
+    bead.animate(
+      [
+        { transform: 'scale(0)' },
+        { transform: 'scale(0.6)', offset: 0.6 },
+        { transform: 'scale(1.22, 0.85)', offset: 0.88 },
+        { transform: 'scale(0.95, 1.05)', offset: 0.95 },
+        { transform: 'scale(1)' },
+      ],
+      { duration: spread + fly + 200, delay: 120, easing: 'ease-out', fill: 'both' },
+    )
+    halo.animate([{ opacity: 0, transform: 'scale(0.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: spread + fly, delay: 200, easing: 'ease-out', fill: 'both' })
+    camTo({ x: center.x, y: center.y, s: 1.45 }, spread + fly + 300, easeInOut)
+    await wait(spread + fly + 260)
+  }
 
-  // 4. It lets go and falls, stretching into a teardrop.
-  const fall = surfaceY - center.y
-  const drip = 160, down = Math.sqrt(fall) * 30
-  play(
-    drop,
-    [
-      { transform: 'translateY(0)', easing: 'ease-out' },
-      { transform: 'translateY(-6px)', offset: drip / (drip + down), easing: 'cubic-bezier(0.55, 0, 0.95, 0.5)' },
-      { transform: `translateY(${fall}px)` },
-    ],
-    { duration: drip + down },
-  )
-  play(
-    bead,
-    [
-      { transform: 'scale(1)' },
-      { transform: 'scale(1.1, 0.9)', offset: drip / (drip + down) },
-      { transform: 'scale(0.7, 1.35)', offset: 0.85 },
-      { transform: 'scale(0.6, 1.45)' },
-    ],
-    { duration: drip + down, easing: 'ease-in' },
-  )
-  play(halo, [{ opacity: 1 }, { opacity: 0.4 }], { duration: drip + down })
-  await wait(drip + down)
+  if (!skipped) {
+    // 3. It shines: a pulse, a ring of light, and a breath of stillness.
+    haptic('tap')
+    ring.animate(
+      [
+        { opacity: 0.9, width: '12px', height: '12px', left: '-6px', top: '-6px' },
+        { opacity: 0, width: '240px', height: '240px', left: '-120px', top: '-120px' },
+      ],
+      { duration: 1100, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'both' },
+    )
+    bead.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25)', offset: 0.35 }, { transform: 'scale(1)' }], { duration: 560, easing: 'ease-in-out' })
+    halo.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.7)', offset: 0.35 }, { transform: 'scale(1)' }], { duration: 560, easing: 'ease-in-out' })
+    camTo({ s: 1.52 }, 700, easeOut)
+    await wait(700)
+  }
 
-  // 5. Into the sea: gold rings, spray, and a glow spreading through the water.
-  play(drop, [{ opacity: 1 }, { opacity: 0 }], { duration: 90 })
-  sea.splash(center.x)
-  haptic('success')
-  await wait(1300)
+  if (!skipped) {
+    // 4. It lets go. The camera tilts down after it, pulling back to show the ocean below.
+    const drip = 200, fall = 950
+    const t0 = performance.now()
+    const startCam = { ...cam }
+    const endCam = { x: W / 2, y: surfaceY - H * 0.12, s: 0.92 }
+    bead.animate(
+      [
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.12, 0.88)', offset: drip / (drip + fall) },
+        { transform: 'scale(0.62, 1.5)', offset: 0.8 },
+        { transform: 'scale(0.55, 1.7)' },
+      ],
+      { duration: drip + fall, easing: 'ease-in', fill: 'forwards' },
+    )
+    halo.animate([{ opacity: 1 }, { opacity: 0.35 }], { duration: drip + fall, fill: 'forwards' })
+    follow = (now) => {
+      const t = now - t0
+      if (t < drip) {
+        // Gathering itself: a small rise before the drop.
+        dropY = center.y - 6 * Math.sin((t / drip) * Math.PI * 0.5)
+        return startCam
+      }
+      const p = Math.min(1, (t - drip) / fall)
+      const q = p * p // gravity; the camera keeps pace, so the drop stays near the middle
+      dropY = lerp(center.y - 6, surfaceY, q)
+      return { x: lerp(startCam.x, endCam.x, q), y: lerp(startCam.y, endCam.y, q), s: lerp(startCam.s, endCam.s, easeInOut(p)) }
+    }
+    await wait(drip + fall)
+  }
 
-  // 6. The night lifts on the library, the new drop already in its sea.
+  if (!skipped) {
+    // 5. Impact.
+    follow = null
+    tween = null
+    drop.style.opacity = '0'
+    sea.splash(center.x)
+    shake = { t0: performance.now(), amp: 9 }
+    flash.animate([{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 0 }], { duration: 700, easing: 'ease-out' })
+    haptic('success')
+    await wait(220)
+    // 6. The drop sinks, glowing, into the depths, as the camera rises and pulls back on the whole sea.
+    sinking = { t0: performance.now() }
+    camTo({ y: surfaceY - H * 0.08, s: 0.8 }, 2200, easeOut)
+    await wait(1700)
+  }
+
+  // ── The night lifts on the library. ──
   landed = { id, at: performance.now() }
   navigate()
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  await overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: skipped ? 250 : 700, easing: 'ease-in-out', fill: 'forwards' }).finished
-  sea.stop()
+  const out = skipped ? 250 : 750
+  barTop.animate([{ transform: 'none' }, { transform: 'translateY(-100%)' }], { duration: out, easing: 'ease-in', fill: 'forwards' })
+  barBottom.animate([{ transform: 'none' }, { transform: 'translateY(100%)' }], { duration: out, easing: 'ease-in', fill: 'forwards' })
+  await overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: out, easing: 'ease-in-out', fill: 'forwards' }).finished
+  cancelAnimationFrame(raf)
   overlay.remove()
   active = false
 }
 
 /**
- * The night sea under the drop: a halftone lattice of pale dots rocking on slow swells,
- * with a few stars above. A splash sends gold rings across the surface, lights the dots
- * it passes, and throws gold spray that falls back in.
+ * The night: stars far off (they barely move with the camera), and the sea, a halftone
+ * lattice of pale dots on slow swells. A splash sends gold rings racing across the water,
+ * lights the dots they pass and throws gold spray; then the drop sinks as a glowing mote.
  */
-function startSea(canvas: HTMLCanvasElement, W: number, H: number, surfaceY: number) {
+function startSea(canvas: HTMLCanvasElement, W: number, H: number, surfaceY: number, sinkingNow: () => { t0: number } | null) {
   const dpr = Math.min(2, window.devicePixelRatio || 1)
   canvas.width = W * dpr
   canvas.height = H * dpr
   const ctx = canvas.getContext('2d')!
   const GAP = 14
-  const stars = Array.from({ length: 46 }, () => ({ x: Math.random() * W, y: Math.random() * surfaceY * 0.8, ph: Math.random() * 6.28, r: 0.4 + Math.random() * 0.8 }))
+  let seed = 7
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+  const stars = Array.from({ length: 90 }, () => ({ x: rand() * W * 1.4 - W * 0.2, y: rand() * H * 1.6 - H * 0.5, ph: rand() * 6.28, r: 0.35 + rand() * 0.9 }))
   const ripples: { x: number; t0: number }[] = []
   const spray: { x: number; y: number; vx: number; vy: number; r: number }[] = []
-  let raf = 0, last = 0
+  let last = 0
+  const RINGS = [0, 0.28, 0.56, 0.9]
+  const SPEED = 230
 
-  const surface = (x: number, t: number) => surfaceY + 6 * Math.sin(x * 0.022 - t * 0.8) + 2 * Math.sin(x * 0.07 + t * 1.3)
+  const surface = (x: number, t: number) => surfaceY + 7 * Math.sin(x * 0.02 - t * 0.8) + 2.5 * Math.sin(x * 0.065 + t * 1.3)
 
-  const frame = (now: number) => {
-    raf = requestAnimationFrame(frame)
+  /** How strongly the rings light a point, and how far they lift it. */
+  const stir = (x: number, y: number, now: number) => {
+    let light = 0, push = 0
+    for (const r of ripples) {
+      const age = (now - r.t0) / 1000
+      for (const k of RINGS) {
+        if (age <= k) continue
+        const R = (age - k) * SPEED, ry = R / 3.4
+        const band = (Math.hypot((x - r.x) / R, (y - surfaceY - 2 - ry) / ry) - 1) * R
+        if (Math.abs(band) > 34) continue
+        const a = Math.exp(-(age - k) * 0.9) * Math.cos((band / 34) * Math.PI * 0.5)
+        light += a
+        push += a * 5
+      }
+    }
+    return { light: Math.min(1, light), push }
+  }
+
+  const draw = (now: number, cam: Cam) => {
     const t = now / 1000
     const dt = Math.min(0.05, (now - (last || now)) / 1000)
     last = now
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, W, H)
+    const horizon = H / 2 + (surfaceY - cam.y) * cam.s
 
+    // Stars, far away: a little parallax, and none below the horizon.
     for (const s of stars) {
-      ctx.fillStyle = `rgba(${CREAM}, ${0.25 + 0.25 * Math.sin(t * 1.3 + s.ph)})`
+      const sx = s.x - (cam.x - W / 2) * 0.12, sy = s.y - (cam.y - H / 2) * 0.12
+      if (sy > horizon - 12 || sy < -4 || sx < -4 || sx > W + 4) continue
+      ctx.fillStyle = `rgba(${CREAM}, ${0.22 + 0.25 * Math.sin(t * 1.3 + s.ph)})`
       ctx.beginPath()
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
+      ctx.arc(sx, sy, s.r, 0, Math.PI * 2)
       ctx.fill()
     }
 
-    /** How strongly ripples light this point, and how far they push it. */
-    const stir = (x: number, y: number) => {
-      let light = 0, push = 0
-      for (const r of ripples) {
-        const age = (now - r.t0) / 1000
-        for (const k of [0, 0.32, 0.64]) {
-          if (age <= k) continue
-          // The same flattened rings that are drawn on the surface: how far is this point from one?
-          const R = (age - k) * 150, ry = R / 3.4
-          const band = (Math.hypot((x - r.x) / R, (y - surfaceY - 2 - ry) / ry) - 1) * R
-          if (Math.abs(band) > 30) continue
-          const a = Math.exp(-(age - k) * 1.3) * Math.cos((band / 30) * Math.PI * 0.5)
-          light += a
-          push += a * 4
-        }
-      }
-      return { light: Math.min(1, light), push }
-    }
-
-    // The waterline, then the lattice beneath it.
-    for (let x = 0; x <= W; x += GAP / 2.2) {
-      const y = surface(x, t)
-      const { light } = stir(x, y)
-      ctx.fillStyle = light > 0.05 ? `rgba(${GOLD}, ${0.5 + 0.5 * light})` : `rgba(${CREAM}, 0.5)`
-      ctx.beginPath()
-      ctx.arc(x, y, 1.3 + light, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    const rowGap = GAP * 0.8
-    for (let r = 0, y0 = surfaceY + 8; y0 < H + 4; r++, y0 += rowGap) {
-      const d = Math.min(1, (y0 - surfaceY) / (H - surfaceY))
-      for (let x0 = r % 2 ? 0 : -GAP / 2; x0 < W + GAP; x0 += GAP) {
-        const ph = x0 * 0.022 - t * 0.8 + d * 1.4
-        const A = 3 * Math.exp(-d * 2.2) + 0.3
-        const { light, push } = stir(x0, y0)
-        const x = x0 + A * Math.cos(ph) * 0.7, y = y0 + A * Math.sin(ph) - push
-        if (y < surface(x, t) + 4) continue
-        const swell = Math.sin(x0 * 0.022 - t * 0.8 - d * 2.4) * Math.exp(-d * 1.2)
-        const radius = 0.5 + 0.8 * (0.5 + 0.5 * swell) * (1 - d * 0.4) + light * 1.1
-        ctx.fillStyle = light > 0.05
-          ? `rgba(${GOLD}, ${0.15 + 0.75 * light})`
-          : `rgba(${CREAM}, ${Math.max(0.05, 0.08 + 0.26 * Math.pow(1 - d, 1.5) + 0.05 * swell)})`
+    // Everything else is in the world, seen through the camera.
+    ctx.setTransform(dpr * cam.s, 0, 0, dpr * cam.s, dpr * (W / 2 - cam.x * cam.s), dpr * (H / 2 - cam.y * cam.s))
+    const x0 = cam.x - W / 2 / cam.s - GAP, x1 = cam.x + W / 2 / cam.s + GAP
+    const yBottom = cam.y + H / 2 / cam.s + GAP
+    if (surfaceY - 20 < yBottom) {
+      const step = GAP / 2.2
+      for (let x = Math.floor(x0 / step) * step; x <= x1; x += step) {
+        const y = surface(x, t)
+        const { light } = stir(x, y, now)
+        ctx.fillStyle = light > 0.05 ? `rgba(${GOLD}, ${0.5 + 0.5 * light})` : `rgba(${CREAM}, 0.55)`
         ctx.beginPath()
-        ctx.arc(x, y, radius, 0, Math.PI * 2)
+        ctx.arc(x, y, 1.4 + light * 1.2, 0, Math.PI * 2)
         ctx.fill()
       }
+      const rowGap = GAP * 0.8
+      for (let r = 0, y0 = surfaceY + 8; y0 < yBottom; r++, y0 += rowGap) {
+        const d = Math.min(1, (y0 - surfaceY) / (H * 0.7))
+        const start = Math.floor(x0 / GAP) * GAP + (r % 2 ? 0 : -GAP / 2)
+        for (let xg = start; xg < x1; xg += GAP) {
+          const ph = xg * 0.02 - t * 0.8 + d * 1.4
+          const A = 3.2 * Math.exp(-d * 2.2) + 0.3
+          const { light, push } = stir(xg, y0, now)
+          const x = xg + A * Math.cos(ph) * 0.7, y = y0 + A * Math.sin(ph) - push
+          if (y < surface(x, t) + 4) continue
+          const swell = Math.sin(xg * 0.02 - t * 0.8 - d * 2.4) * Math.exp(-d * 1.2)
+          const radius = 0.55 + 0.85 * (0.5 + 0.5 * swell) * (1 - d * 0.4) + light * 1.3
+          ctx.fillStyle =
+            light > 0.05
+              ? `rgba(${GOLD}, ${0.15 + 0.8 * light})`
+              : `rgba(${CREAM}, ${Math.max(0.05, 0.09 + 0.28 * Math.pow(1 - d, 1.5) + 0.05 * swell)})`
+          ctx.beginPath()
+          ctx.arc(x, y, radius, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
     }
 
-    // Rings spreading across the surface, flattened by the low angle we see it from.
+    // Rings racing out across the surface, flattened by the low angle.
     for (const r of ripples) {
       const age = (now - r.t0) / 1000
-      for (const k of [0, 0.32, 0.64]) {
+      for (const k of RINGS) {
         const a = age - k
         if (a <= 0) continue
-        const rad = a * 150, alpha = 0.7 * Math.exp(-a * 1.5)
+        const rad = a * SPEED, alpha = 0.75 * Math.exp(-a * 1.1)
         if (alpha < 0.02) continue
         ctx.strokeStyle = `rgba(${GOLD}, ${alpha})`
-        ctx.lineWidth = 1.4
+        ctx.lineWidth = 1.5 / cam.s
         ctx.beginPath()
         // Its far edge stays at the waterline; the near edge comes toward us.
         ctx.ellipse(r.x, surfaceY + 2 + rad / 3.4, rad, rad / 3.4, 0, 0, Math.PI * 2)
         ctx.stroke()
       }
+      // And a glow where it went in.
+      const g = Math.max(0, 0.6 * Math.exp(-age * 1.1))
+      if (g > 0.01) {
+        const grad = ctx.createRadialGradient(r.x, surfaceY, 0, r.x, surfaceY, 200)
+        grad.addColorStop(0, `rgba(${GOLD}, ${g})`)
+        grad.addColorStop(1, `rgba(${GOLD}, 0)`)
+        ctx.fillStyle = grad
+        ctx.fillRect(r.x - 200, surfaceY - 200, 400, 400)
+      }
     }
 
-    // A glow where it went in.
-    for (const r of ripples) {
-      const age = (now - r.t0) / 1000
-      const a = Math.max(0, 0.55 * Math.exp(-age * 1.4))
-      if (a < 0.01) continue
-      const g = ctx.createRadialGradient(r.x, surfaceY, 0, r.x, surfaceY, 140)
-      g.addColorStop(0, `rgba(${GOLD}, ${a})`)
-      g.addColorStop(1, `rgba(${GOLD}, 0)`)
-      ctx.fillStyle = g
-      ctx.fillRect(r.x - 140, surfaceY - 140, 280, 280)
+    // The drop, sunk: a glowing mote drifting down into the dark.
+    const sinking = sinkingNow()
+    if (sinking) {
+      const p = Math.min(1, (now - sinking.t0) / 2400)
+      const y = surfaceY + 14 + H * 0.34 * easeOut(p)
+      const x = W / 2 + 6 * Math.sin(p * 5)
+      const a = 1 - p * 0.75
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, 26)
+      grad.addColorStop(0, `rgba(${GOLD}, ${0.55 * a})`)
+      grad.addColorStop(1, `rgba(${GOLD}, 0)`)
+      ctx.fillStyle = grad
+      ctx.fillRect(x - 26, y - 26, 52, 52)
+      ctx.fillStyle = `rgba(255, 240, 205, ${a})`
+      ctx.beginPath()
+      ctx.arc(x, y, 2.6, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     ctx.fillStyle = `rgb(${GOLD})`
     for (const s of spray) {
-      s.vy += 900 * dt
+      s.vy += 1100 * dt
       s.x += s.vx * dt
       s.y += s.vy * dt
       ctx.beginPath()
@@ -332,21 +471,23 @@ function startSea(canvas: HTMLCanvasElement, W: number, H: number, surfaceY: num
     }
     for (let i = spray.length - 1; i >= 0; i--) if (spray[i].vy > 0 && spray[i].y > surface(spray[i].x, t)) spray.splice(i, 1)
   }
-  raf = requestAnimationFrame(frame)
 
   return {
+    draw,
     splash(x: number) {
       ripples.push({ x, t0: performance.now() })
-      // A crown of spray, tallest in the middle.
-      for (let i = 0; i < 22; i++) {
-        const u = i / 21 - 0.5
-        const a = -Math.PI / 2 + u * 2.2 + (Math.random() - 0.5) * 0.2
-        const v = 160 + 200 * (1 - Math.abs(u) * 1.4) * (0.7 + Math.random() * 0.5)
-        spray.push({ x, y: surfaceY - 2, vx: Math.cos(a) * v * 0.8, vy: Math.sin(a) * v * 1.4, r: 0.9 + Math.random() * 1.6 })
+      // A crown of spray, tallest in the middle, and a few fine droplets flung wide.
+      for (let i = 0; i < 34; i++) {
+        const u = i / 33 - 0.5
+        const a = -Math.PI / 2 + u * 2.3 + (rand() - 0.5) * 0.2
+        const v = 220 + 300 * (1 - Math.abs(u) * 1.4) * (0.7 + rand() * 0.5)
+        spray.push({ x, y: surfaceY - 2, vx: Math.cos(a) * v * 0.75, vy: Math.sin(a) * v * 1.35, r: 1 + rand() * 2 })
       }
-    },
-    stop() {
-      cancelAnimationFrame(raf)
+      for (let i = 0; i < 14; i++) {
+        const a = -Math.PI / 2 + (rand() - 0.5) * 2.8
+        const v = 380 + rand() * 260
+        spray.push({ x, y: surfaceY - 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 0.6 + rand() * 0.6 })
+      }
     },
   }
 }

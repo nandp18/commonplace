@@ -154,6 +154,23 @@ main.full { padding: 0; }
   transition: width 0.4s var(--spring), height 0.4s var(--spring), transform 0.35s var(--spring);
 }
 .capture-fab:active { transform: scale(1.08); }
+.capture-menu { position: relative; }
+.capture-options {
+  position: absolute; right: 0; bottom: calc(100% + 12px); min-width: 196px; padding: 6px; border-radius: 24px;
+  display: flex; flex-direction: column; transform-origin: calc(100% - 31px) 100%;
+  opacity: 0; transform: translateY(8px) scale(0.6); pointer-events: none; visibility: hidden;
+  transition: opacity 0.2s, transform 0.35s var(--spring), visibility 0s 0.35s;
+}
+.capture-menu.open .capture-options { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity 0.2s, transform 0.4s var(--spring); }
+.capture-option {
+  display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 18px; cursor: pointer;
+  font-size: 16px; font-weight: 500; color: var(--ink); white-space: nowrap;
+  opacity: 0; transform: translateY(6px); transition: opacity 0.2s, transform 0.3s var(--spring), background 0.15s;
+}
+.capture-menu.open .capture-option { opacity: 1; transform: none; }
+.capture-menu.open .capture-option:nth-child(2) { transition-delay: 0.03s; }
+.capture-menu.open .capture-option:nth-child(3) { transition-delay: 0.06s; }
+.capture-option:active { background: rgba(60, 50, 25, 0.08); }
 .tabbar.minimized .tabs { height: 48px; }
 .tabbar.minimized .tabs a:not(.on) { width: 0; opacity: 0; }
 .tabbar.minimized .tabs a.on { width: 56px; }
@@ -676,8 +693,20 @@ html[data-nav='zoom']::view-transition-new(root) { animation: vt-fade-in 0.4s ea
   background: radial-gradient(120% 70% at 50% 36%, #1a2230 0%, #0c1119 55%, #06090e 100%);
 }
 .ceremony-sea { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+.ceremony-world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; will-change: transform; }
 .ceremony-word { position: absolute; white-space: pre; pointer-events: none; will-change: transform, opacity; }
-.ceremony-drop { position: absolute; width: 0; height: 0; pointer-events: none; }
+.ceremony-drop { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.ceremony-vignette {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(120% 90% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+}
+.ceremony-flash {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen;
+  background: radial-gradient(70% 50% at 50% 60%, rgba(255, 236, 190, 0.55), rgba(232, 194, 122, 0.12) 60%, transparent);
+}
+.ceremony-bar { position: absolute; left: 0; right: 0; height: max(7vh, 44px); background: #000; pointer-events: none; }
+.ceremony-bar.top { top: 0; transform: translateY(-100%); }
+.ceremony-bar.bottom { bottom: 0; transform: translateY(100%); }
 .ceremony-bead {
   position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #fff4d6, #f0cf86 38%, #c9973f 75%, #9c7228);

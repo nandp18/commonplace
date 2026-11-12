@@ -77,11 +77,54 @@ function TabBar({ inLibrary, inBooks }: { inLibrary: boolean; inBooks: boolean }
           <span>Books</span>
         </a>
       </div>
-      <CaptureButton className="glass capture-fab">
-        <Icon name="camera" size={26} />
-        <span className="sr-only">Capture</span>
-      </CaptureButton>
+      <CaptureMenu />
     </nav>
+  )
+}
+
+/** The capture button opens three ways in: photograph a page, pick a photo, or type it. */
+function CaptureMenu() {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: Event) => !root.current?.contains(e.target as Node) && setOpen(false)
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('pointerdown', close)
+    window.addEventListener('scroll', close, { passive: true })
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      window.removeEventListener('scroll', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  const done = () => setOpen(false)
+  return (
+    <div ref={root} className={`capture-menu ${open ? 'open' : ''}`}>
+      <div className="capture-options glass" role="menu" aria-hidden={!open}>
+        <CaptureButton className="capture-option" camera>
+          <Icon name="camera" size={20} /> Take photo
+        </CaptureButton>
+        <CaptureButton className="capture-option">
+          <Icon name="photos" size={20} /> Choose photo
+        </CaptureButton>
+        <a className="capture-option" href="#/new" onClick={done}>
+          <Icon name="note" size={20} /> Type it
+        </a>
+      </div>
+      <button
+        className="glass capture-fab"
+        aria-expanded={open}
+        aria-label={open ? 'Close' : 'Add a quote'}
+        onClick={() => {
+          haptic('tick')
+          setOpen(!open)
+        }}
+      >
+        <Icon name={open ? 'close' : 'camera'} size={open ? 20 : 26} />
+      </button>
+    </div>
   )
 }
 
