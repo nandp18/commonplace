@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { QuoteText } from './components'
-import { incomingDrop, landDrop } from './drop'
+import { arrivedByCeremony } from './drop'
 import { haptic, markTransition, morphName, reducedMotion } from './motion'
 import type { Book, Quote } from './types'
 
@@ -65,10 +65,10 @@ export function DotSea({
   const lift = useRef(new Map<string, number>())
   /** A filed quote's drop: falling from above the sea, or sinking in from the surface where it landed. */
   const falling = useRef<{ id: string; t0: number; from: number } | null>(
-    freshId && !incomingDrop() ? { id: freshId, t0: performance.now(), from: -16 } : null,
+    freshId && !arrivedByCeremony(freshId) ? { id: freshId, t0: performance.now(), from: -16 } : null,
   )
-  /** Kept off the canvas while the ink drop from the filing sheet is still in the air. */
-  const airborne = useRef<string | null>(freshId && incomingDrop() ? freshId : null)
+  /** A gold glow around a drop that just arrived by the filing ceremony. */
+  const glow = useRef<{ id: string; t0: number } | null>(null)
   const spray = useRef<Spray[]>([])
 
   // Each quote gets a fixed place: depth by age (newest just under the surface), x by a stable hash.
@@ -107,22 +107,14 @@ export function DotSea({
         spray.current.push({ x: d.x, y: SURFACE - 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 1.5, r: 1 + Math.random() * 0.9 })
       }
     }
-    if (airborne.current === freshId && d) {
-      // The ink drop from the filing sheet is in the air: catch it, then sink it into place.
-      let cancelled = false
-      landDrop(() => {
-        const r = canvas.current?.getBoundingClientRect()
-        return r ? { x: r.left + d.x, y: r.top + SURFACE } : null
-      }).then((landed) => {
-        if (cancelled) return
-        airborne.current = null
-        falling.current = { id: freshId, t0: performance.now(), from: landed ? SURFACE : -16 }
-        if (landed) haptic('tap')
-        splash(landed ? 1.7 : 1.4)
-      })
-      return () => void (cancelled = true)
+    if (arrivedByCeremony(freshId)) {
+      // It already fell in, full screen: here it's simply in place, still glowing, the water still moving.
+      falling.current = null
+      const now = performance.now()
+      glow.current = { id: freshId, t0: now }
+      if (d) ripples.current.push({ x: d.x, y: Math.max(SURFACE + 16, d.y - 40), t0: now, strength: 1.2 })
+      return
     }
-    airborne.current = null
     falling.current = { id: freshId, t0: performance.now(), from: -16 }
     if (d) setTimeout(() => splash(1.4), 380)
   }, [freshId, width])
@@ -225,7 +217,6 @@ export function DotSea({
         const cur = lift.current.get(id) ?? d.y
         let y = still ? target : cur + (target - cur) * 0.07
         lift.current.set(id, y)
-        if (airborne.current === id) continue
         const f = falling.current
         if (f && f.id === id) {
           const fromSurface = f.from >= SURFACE
@@ -252,6 +243,19 @@ export function DotSea({
           ctx.beginPath()
           ctx.arc(x, yy, 4, 0, Math.PI * 2)
           ctx.fill()
+        }
+        const g = glow.current
+        if (g && g.id === id) {
+          // Fresh from the ceremony: a gold glow that breathes out and fades.
+          const p = (now - g.t0) / 3200
+          if (p >= 1) glow.current = null
+          else {
+            const fade = 1 - p
+            ctx.fillStyle = `rgba(${GOLD}, ${0.22 * fade})`
+            ctx.beginPath()
+            ctx.arc(x, yy, 7 + 9 * Math.sin(Math.min(1, p * 3) * Math.PI * 0.5), 0, Math.PI * 2)
+            ctx.fill()
+          }
         }
         ctx.fillStyle = `rgba(${color}, ${isSel || isToday ? 1 : 0.85})`
         ctx.beginPath()

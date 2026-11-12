@@ -3,8 +3,8 @@ import { flushSync } from 'react-dom'
 import { Capture } from './Capture'
 import { CaptureButton } from './components'
 import { Icon } from './icons'
-import { incomingDrop } from './drop'
-import { haptic, hasMorph, setNavDone } from './motion'
+import { ceremonyActive } from './drop'
+import { haptic, hasMorph } from './motion'
 import { Library } from './library'
 import { Ocean } from './ocean'
 import { BookView, NewQuote, QuoteView, Settings, Shelf } from './screens'
@@ -27,15 +27,15 @@ function useRoute() {
         flushSync(() => setHash(next))
         window.scrollTo(0, 0)
       }
-      const doc = document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }
-      if (!doc.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) return apply()
+      const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown }
+      // While the filing ceremony covers the screen, it does the transition itself.
+      if (!doc.startViewTransition || ceremonyActive() || matchMedia('(prefers-reduced-motion: reduce)').matches) return apply()
       const d = depth(next) - depth(current.current)
       const detail = (h: string) => /^#\/(quote|book)\//.test(h)
       // A tapped card grows into its page (iOS zoom transition); otherwise push/pop.
       const zoom = hasMorph() && (detail(next) || detail(current.current))
-      // A filed quote's ink drop hangs over a quick fade, then falls into the library.
-      document.documentElement.dataset.nav = incomingDrop() ? 'fade' : zoom ? 'zoom' : d > 0 ? 'push' : d < 0 ? 'pop' : 'fade'
-      setNavDone(doc.startViewTransition(apply).finished)
+      document.documentElement.dataset.nav = zoom ? 'zoom' : d > 0 ? 'push' : d < 0 ? 'pop' : 'fade'
+      doc.startViewTransition(apply)
     }
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)

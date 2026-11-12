@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CaptureButton, EditableQuote, go, QuoteFields, Segmented, Sheet } from './components'
-import { gatherIntoDrop } from './drop'
+import { fileIntoSea } from './drop'
 import { haptic } from './motion'
 import { PageArt } from './screens'
 import { formatSelection, readsAsEnglish } from './format'
@@ -229,9 +229,10 @@ export function Capture({ store }: { store: Store }) {
                 if (filingAway) return
                 setFilingAway(true)
                 haptic('success')
-                // The words gather into a drop, which then falls into the sea on the timeline.
-                if (filingCard.current) await gatherIntoDrop(filingCard.current)
-                go(`/?new=${saved?.id}`)
+                // The words gather into a gold drop and fall into the sea, full screen.
+                const id = saved!.id
+                if (filingCard.current) await fileIntoSea(filingCard.current, id, () => go(`/?new=${id}`))
+                else go(`/?new=${id}`)
               }}
             >
               <Icon name="sparkle" size={18} animate /> File quote

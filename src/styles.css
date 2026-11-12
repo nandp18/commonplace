@@ -669,15 +669,25 @@ html[data-nav='zoom']::view-transition-new(root) { animation: vt-fade-in 0.4s ea
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
-/* A filed quote, gathered into one bead of ink on its way to the sea. */
-.filing.gathering .quote-text.quoted > p::before,
-.filing.gathering .quote-text.quoted > p::after { opacity: 0; transition: opacity 0.2s; }
-.filing.gathering { pointer-events: none; }
-.ink-drop { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 200; pointer-events: none; view-transition-name: ink-drop; }
-.ink-drop-body {
-  position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%;
-  background: radial-gradient(circle at 36% 32%, rgb(120, 168, 255), rgb(52, 120, 246) 55%, rgb(36, 92, 210));
-  box-shadow: 0 0 0 5px rgba(52, 120, 246, 0.12), 0 3px 10px rgba(52, 120, 246, 0.35);
+/* Filing a quote: night falls, the words gather into a gold drop, and it falls into the sea. */
+.ceremony { position: fixed; inset: 0; z-index: 300; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ceremony-night {
+  position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(120% 70% at 50% 36%, #1a2230 0%, #0c1119 55%, #06090e 100%);
 }
-::view-transition-group(ink-drop), ::view-transition-new(ink-drop) { animation: none; }
-::view-transition-old(ink-drop) { display: none; }
+.ceremony-sea { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+.ceremony-word { position: absolute; white-space: pre; pointer-events: none; will-change: transform, opacity; }
+.ceremony-drop { position: absolute; width: 0; height: 0; pointer-events: none; }
+.ceremony-bead {
+  position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff4d6, #f0cf86 38%, #c9973f 75%, #9c7228);
+  box-shadow: 0 0 10px 2px rgba(240, 200, 120, 0.75), 0 0 34px 8px rgba(232, 194, 122, 0.35);
+}
+.ceremony-halo {
+  position: absolute; left: -60px; top: -60px; width: 120px; height: 120px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(232, 194, 122, 0.32), rgba(232, 194, 122, 0.08) 45%, transparent 70%);
+}
+.ceremony-ring {
+  position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border-radius: 50%;
+  border: 1.5px solid rgba(240, 210, 150, 0.9); opacity: 0;
+}
