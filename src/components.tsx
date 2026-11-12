@@ -87,7 +87,7 @@ export function Page({
   trailing,
   children,
 }: {
-  title: string
+  title: ReactNode
   back?: string
   leading?: ReactNode
   trailing?: ReactNode

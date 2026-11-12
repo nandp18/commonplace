@@ -116,6 +116,8 @@ main.full { padding: 0; }
 }
 .navbar.scrolled::before { opacity: 1; }
 .navbar-title { font-weight: 600; font-size: 20px; letter-spacing: -0.025em; max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-title { display: inline-flex; align-items: center; gap: 7px; }
+.app-title img { display: block; height: 24px; width: auto; margin-top: -2px; }
 .navbar-side { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .navbar-side.end { justify-content: flex-end; }
 .page-body { padding: 4px 22px 0; }

@@ -1,7 +1,7 @@
 """
 Draws the Commonplace logo: a drop of gold, made of halftone dots like the sea, with an
-opening quotation mark picked out in brighter dots. Writes public/icon.svg and the PNG
-icons from the same dots, so they always match.
+opening quotation mark picked out in brighter dots. Writes public/icon.svg, the PNG
+icons and public/mark.svg (the drop alone, for the app header) from the same dots, so they always match.
 
     python3 scripts/make-icon.py            # write the icons
     python3 scripts/make-icon.py preview    # also write docs/logo-preview.png
@@ -100,9 +100,26 @@ def png(ds, size: int, rounded=True) -> Image.Image:
     return big.resize((size, size), Image.Resampling.LANCZOS)
 
 
+def mark_svg(ds) -> str:
+    """The drop alone, for light backgrounds: deeper gold, with the quote in ink."""
+    deep_gold = (181, 138, 53)  # --gold
+    body = "\n".join(
+        # Small on a pale page, so the gold dots are fuller and more solid than on the icon.
+        f'  <circle cx="{x:.1f}" cy="{y:.1f}" r="{r if c == CREAM else r * 1.3:.2f}" fill="rgb{INK if c == CREAM else deep_gold}"'
+        + ("" if c == CREAM else f' fill-opacity="{0.7 + 0.3 * a:.2f}"')
+        + "/>"
+        for x, y, r, c, a in ds
+    )
+    pad = GAP * 0.5
+    x0, x1 = min(x - r for x, y, r, *_ in ds) - pad, max(x + r for x, y, r, *_ in ds) + pad
+    y0, y1 = min(y - r for x, y, r, *_ in ds) - pad, max(y + r for x, y, r, *_ in ds) + pad
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{x0:.0f} {y0:.0f} {x1 - x0:.0f} {y1 - y0:.0f}">\n{body}\n</svg>\n'
+
+
 if __name__ == "__main__":
     ds = dots()
     (ROOT / "public/icon.svg").write_text(svg(ds))
+    (ROOT / "public/mark.svg").write_text(mark_svg(ds))
     for s in (192, 512):
         png(ds, s, rounded=False).convert("RGB").save(ROOT / f"public/icon-{s}.png")
     if "preview" in sys.argv:

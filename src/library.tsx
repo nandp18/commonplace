@@ -82,7 +82,7 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
 
   if (store.ready && store.quotes.length === 0) {
     return (
-      <Page title="Commonplace" {...nav}>
+      <Page title={<AppTitle />} {...nav}>
         <div className="empty">
           <PageArt />
           <h2>Keep the lines that keep you.</h2>
@@ -102,7 +102,7 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
   }
 
   return (
-    <Page title="Commonplace" {...nav}>
+    <Page title={<AppTitle />} {...nav}>
       {searching && (
         <div className="search-field">
           <Icon name="search" size={16} />
@@ -254,5 +254,15 @@ function Tags({ store }: { store: Store }) {
         ))}
       </div>
     </>
+  )
+}
+
+/** The drop and the name, in the library's navigation bar. */
+function AppTitle() {
+  return (
+    <span className="app-title">
+      <img src="./mark.svg" alt="" width={17} height={24} />
+      Commonplace
+    </span>
   )
 }
