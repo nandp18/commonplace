@@ -668,3 +668,16 @@ html[data-nav='zoom']::view-transition-new(root) { animation: vt-fade-in 0.4s ea
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* A filed quote, gathered into one bead of ink on its way to the sea. */
+.filing.gathering .quote-text.quoted > p::before,
+.filing.gathering .quote-text.quoted > p::after { opacity: 0; transition: opacity 0.2s; }
+.filing.gathering { pointer-events: none; }
+.ink-drop { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 200; pointer-events: none; view-transition-name: ink-drop; }
+.ink-drop-body {
+  position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%;
+  background: radial-gradient(circle at 36% 32%, rgb(120, 168, 255), rgb(52, 120, 246) 55%, rgb(36, 92, 210));
+  box-shadow: 0 0 0 5px rgba(52, 120, 246, 0.12), 0 3px 10px rgba(52, 120, 246, 0.35);
+}
+::view-transition-group(ink-drop), ::view-transition-new(ink-drop) { animation: none; }
+::view-transition-old(ink-drop) { display: none; }

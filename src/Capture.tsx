@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CaptureButton, EditableQuote, go, QuoteFields, Segmented, Sheet } from './components'
+import { gatherIntoDrop } from './drop'
 import { haptic } from './motion'
 import { PageArt } from './screens'
 import { formatSelection, readsAsEnglish } from './format'
@@ -34,6 +35,8 @@ export function Capture({ store }: { store: Store }) {
   const [detecting, setDetecting] = useState<Lang | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<{ id: string; uncertain: string[] } | null>(null)
+  const filingCard = useRef<HTMLDivElement>(null)
+  const [filingAway, setFilingAway] = useState(false)
 
   useEffect(() => {
     warmUp(lang)
@@ -206,7 +209,7 @@ export function Capture({ store }: { store: Store }) {
 
       <Sheet open={!!savedQuote} onClose={() => go(`/?new=${saved?.id}`)}>
         {savedQuote && (
-          <div className="filing">
+          <div className="filing" ref={filingCard}>
             <div className="filing-head">
               <span className="filing-label">Quote</span>
               <span className="saved-tag">
@@ -222,8 +225,12 @@ export function Capture({ store }: { store: Store }) {
             <QuoteFields store={store} quote={savedQuote} />
             <button
               className="ink-button wide"
-              onClick={() => {
+              onClick={async () => {
+                if (filingAway) return
+                setFilingAway(true)
                 haptic('success')
+                // The words gather into a drop, which then falls into the sea on the timeline.
+                if (filingCard.current) await gatherIntoDrop(filingCard.current)
                 go(`/?new=${saved?.id}`)
               }}
             >

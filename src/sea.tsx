@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { QuoteText } from './components'
+import { incomingDrop, landDrop } from './drop'
 import { haptic, markTransition, morphName, reducedMotion } from './motion'
 import type { Book, Quote } from './types'
 
@@ -16,6 +17,15 @@ const SURFACE = 46 // resting height of the waterline
 const INK = '30, 35, 29'
 const GOLD = '181, 138, 53'
 const BLUE = '52, 120, 246'
+
+/** Spray thrown up where a drop hits the water. */
+interface Spray {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  r: number
+}
 
 interface Ripple {
   x: number
@@ -53,7 +63,13 @@ export function DotSea({
   const ripples = useRef<Ripple[]>([])
   /** Where the selected drop currently is, eased toward the surface. */
   const lift = useRef(new Map<string, number>())
-  const falling = useRef<{ id: string; t0: number } | null>(freshId ? { id: freshId, t0: performance.now() } : null)
+  /** A filed quote's drop: falling from above the sea, or sinking in from the surface where it landed. */
+  const falling = useRef<{ id: string; t0: number; from: number } | null>(
+    freshId && !incomingDrop() ? { id: freshId, t0: performance.now(), from: -16 } : null,
+  )
+  /** Kept off the canvas while the ink drop from the filing sheet is still in the air. */
+  const airborne = useRef<string | null>(freshId && incomingDrop() ? freshId : null)
+  const spray = useRef<Spray[]>([])
 
   // Each quote gets a fixed place: depth by age (newest just under the surface), x by a stable hash.
   const drops = useMemo(() => {
@@ -81,9 +97,34 @@ export function DotSea({
   useEffect(() => {
     if (!freshId || !width) return
     setSelected(freshId)
-    falling.current = { id: freshId, t0: performance.now() }
     const d = drops.find((x) => x.q.id === freshId)
-    if (d) setTimeout(() => ripples.current.push({ x: d.x, y: SURFACE, t0: performance.now(), strength: 1.4 }), 380)
+    const splash = (strength: number) => {
+      if (!d) return
+      ripples.current.push({ x: d.x, y: SURFACE, t0: performance.now(), strength })
+      for (let i = 0; i < 7; i++) {
+        const a = -Math.PI / 2 + (i / 6 - 0.5) * 1.9 + (Math.random() - 0.5) * 0.25
+        const v = 70 + Math.random() * 70 * (1 - Math.abs(i / 6 - 0.5))
+        spray.current.push({ x: d.x, y: SURFACE - 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 1.5, r: 1 + Math.random() * 0.9 })
+      }
+    }
+    if (airborne.current === freshId && d) {
+      // The ink drop from the filing sheet is in the air: catch it, then sink it into place.
+      let cancelled = false
+      landDrop(() => {
+        const r = canvas.current?.getBoundingClientRect()
+        return r ? { x: r.left + d.x, y: r.top + SURFACE } : null
+      }).then((landed) => {
+        if (cancelled) return
+        airborne.current = null
+        falling.current = { id: freshId, t0: performance.now(), from: landed ? SURFACE : -16 }
+        if (landed) haptic('tap')
+        splash(landed ? 1.7 : 1.4)
+      })
+      return () => void (cancelled = true)
+    }
+    airborne.current = null
+    falling.current = { id: freshId, t0: performance.now(), from: -16 }
+    if (d) setTimeout(() => splash(1.4), 380)
   }, [freshId, width])
 
   useEffect(() => {
@@ -95,6 +136,7 @@ export function DotSea({
     const ctx = c.getContext('2d')!
     const still = reducedMotion()
     let raf = 0
+    let last = 0
     let visible = true
     const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting))
     io.observe(c)
@@ -106,6 +148,8 @@ export function DotSea({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, width, HEIGHT)
       ripples.current = ripples.current.filter((r) => now - r.t0 < 2600)
+      const dt = Math.min(0.05, (now - (last || now)) / 1000)
+      last = now
 
       const surface = (x: number) => SURFACE + 7 * Math.sin(x * 0.028 - t * 0.9) + 2.5 * Math.sin(x * 0.083 + t * 1.4)
       /** Wave height field: drives dot size, so swells read as halftone bands. */
@@ -157,6 +201,20 @@ export function DotSea({
         }
       }
 
+      // Spray from a splash: flung up, pulled back down, gone once it's back in the water.
+      if (spray.current.length) {
+        ctx.fillStyle = `rgba(${BLUE}, 0.75)`
+        for (const s of spray.current) {
+          s.vy += 520 * dt
+          s.x += s.vx * dt
+          s.y += s.vy * dt
+          ctx.beginPath()
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        spray.current = spray.current.filter((s) => s.vy < 0 || s.y < surface(s.x))
+      }
+
       // The drops.
       const { selected, dailyId } = live.current
       for (const d of drops) {
@@ -167,10 +225,14 @@ export function DotSea({
         const cur = lift.current.get(id) ?? d.y
         let y = still ? target : cur + (target - cur) * 0.07
         lift.current.set(id, y)
+        if (airborne.current === id) continue
         const f = falling.current
         if (f && f.id === id) {
-          const p = Math.min(1, (now - f.t0) / 900)
-          y = -16 + (y + 16) * (1 - Math.pow(1 - p, 3)) // drop in from above
+          const fromSurface = f.from >= SURFACE
+          const p = Math.min(1, (now - f.t0) / (fromSurface ? 1100 : 900))
+          // From above it falls in; from the surface it sinks, quick then slowing like a pebble.
+          const ease = fromSurface ? 1 - Math.pow(1 - p, 4) : 1 - Math.pow(1 - p, 3)
+          y = f.from + (y - f.from) * ease
           if (p >= 1) falling.current = null
         }
         const { dx, dy } = move(d.x, y, Math.min(1, (y - SURFACE) / (HEIGHT - SURFACE)))

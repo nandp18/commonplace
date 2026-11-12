@@ -91,3 +91,14 @@ export const morphSource = () => target?.source
 export const clearMorph = () => {
   target = null
 }
+
+/* ───────────── Screen changes ───────────── */
+
+let navDone: Promise<unknown> = Promise.resolve()
+
+/** Called by the router with the running view transition's `finished` promise. */
+export const setNavDone = (p: Promise<unknown>) => {
+  navDone = p.catch(() => undefined)
+}
+/** Resolves once the current screen change has finished animating. */
+export const afterNav = () => navDone

@@ -54,6 +54,8 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [view, setViewState] = useState<View>(() => {
+    // A just-filed quote falls into the sea, which lives on the timeline.
+    if (freshId) return 'timeline'
     const saved = localStorage.getItem(VIEW_KEY) as View
     return VIEWS.some((v) => v.value === saved) ? saved : 'timeline'
   })
