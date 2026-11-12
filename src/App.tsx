@@ -7,6 +7,7 @@ import { ceremonyActive } from './drop'
 import { haptic, hasMorph } from './motion'
 import { Library } from './library'
 import { Ocean } from './ocean'
+import { SeaLab } from './sealab'
 import { BookView, NewQuote, QuoteView, Settings, Shelf } from './screens'
 import { useStore } from './store'
 
@@ -156,6 +157,9 @@ export function App() {
     case 'ocean':
       screen = <Ocean store={store} />
       break
+    case 'lab':
+      screen = <SeaLab />
+      break
     default:
       screen = <Library store={store} freshId={params.get('new') ?? undefined} />
   }
@@ -165,8 +169,8 @@ export function App() {
 
   return (
     <>
-      <main className={section === 'capture' || section === 'ocean' ? 'full' : ''}>{screen}</main>
-      {section !== 'capture' && section !== 'ocean' && <TabBar inLibrary={inLibrary} inBooks={inBooks} />}
+      <main className={section === 'capture' || section === 'ocean' || section === 'lab' ? 'full' : ''}>{screen}</main>
+      {section !== 'capture' && section !== 'ocean' && section !== 'lab' && <TabBar inLibrary={inLibrary} inBooks={inBooks} />}
     </>
   )
 }
