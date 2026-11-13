@@ -45,6 +45,8 @@ export interface ImportPlan {
   skipped: number
   /** Books gaining a cover, whether new or already in the library. */
   covers: number
+  /** Books that weren't in the library before. */
+  newBooks: number
 }
 
 /** Text reduced to letters and digits, so punctuation and case can't hide a duplicate. */
@@ -117,6 +119,8 @@ export function planImport(file: ImportFile, existing: Collection, now: number):
   const usedIds = new Set(existing.quotes.map((q) => q.id))
   const usedText = new Set(existing.quotes.filter((q) => !q.deleted).map((q) => quoteKey(q.text)))
   const liveBooks = new Map(existing.books.filter((b) => !b.deleted).map((b) => [b.id, b]))
+  // The same edition under a different title ("1984" vs "Nineteen Eighty-Four") is the same book.
+  const isbnIds = new Map(existing.books.filter((b) => !b.deleted && b.isbn).map((b) => [b.isbn!, b.id]))
   const books = new Map<string, Book>()
   const quotes: Quote[] = []
   let skipped = 0
@@ -124,6 +128,8 @@ export function planImport(file: ImportFile, existing: Collection, now: number):
 
   for (const book of file.books) {
     const titleKey = quoteKey(book.title)
+    const sameIsbn = book.isbn?.trim() ? isbnIds.get(book.isbn.trim()) : undefined
+    if (titleKey && sameIsbn && !bookIds.has(titleKey)) bookIds.set(titleKey, sameIsbn)
     const fallback = toTime(book.date)
     for (const q of book.quotes) {
       const key = quoteKey(q.text)
@@ -176,6 +182,7 @@ export function planImport(file: ImportFile, existing: Collection, now: number):
       books.set(target.id, target)
       covers++
     }
+    if (target && book.isbn?.trim() && !isbnIds.has(book.isbn.trim())) isbnIds.set(book.isbn.trim(), target.id)
     // Details only fill blanks: what you've typed in the app wins over an old file.
     if (target) {
       const fill: Partial<Book> = {}
@@ -186,5 +193,6 @@ export function planImport(file: ImportFile, existing: Collection, now: number):
       if (Object.keys(fill).length) books.set(target.id, { ...target, ...fill, ...(books.has(target.id) ? {} : { updatedAt: now }) })
     }
   }
-  return { books: [...books.values()], quotes, skipped, covers }
+  const newBooks = [...books.keys()].filter((id) => !existing.books.some((b) => b.id === id)).length
+  return { books: [...books.values()], quotes, skipped, covers, newBooks }
 }

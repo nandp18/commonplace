@@ -1,0 +1,21 @@
+/* Swiping between Library views: the new one slides in from the side you swiped toward. */
+.view-swap.from-right { animation: view-from-right 0.42s var(--spring) both; }
+.view-swap.from-left { animation: view-from-left 0.42s var(--spring) both; }
+@keyframes view-from-right { from { opacity: 0; transform: translateX(48px); } }
+@keyframes view-from-left { from { opacity: 0; transform: translateX(-48px); } }
+@media (prefers-reduced-motion: reduce) {
+  .view-swap.from-right, .view-swap.from-left { animation-duration: 0.01s; }
+}
+
+/* Fill the screen, so a nearly empty view can still be swiped anywhere below the tabs. */
+.swipe-area { min-height: calc(100dvh - 200px); }
+
+/* Swiping from one tab to the other: both screens slide together, like pages side by side. */
+html[data-nav='swipe-next']::view-transition-old(root) { animation-name: tab-out-left; }
+html[data-nav='swipe-next']::view-transition-new(root) { animation-name: tab-in-right; }
+html[data-nav='swipe-prev']::view-transition-old(root) { animation-name: tab-out-right; }
+html[data-nav='swipe-prev']::view-transition-new(root) { animation-name: tab-in-left; }
+@keyframes tab-out-left { to { transform: translateX(-100%); } }
+@keyframes tab-in-right { from { transform: translateX(100%); } }
+@keyframes tab-out-right { to { transform: translateX(100%); } }
+@keyframes tab-in-left { from { transform: translateX(-100%); } }

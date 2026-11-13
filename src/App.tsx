@@ -11,6 +11,7 @@ import { SeaLab } from './sealab'
 import { AddBook } from './books'
 import { BookView, NewQuote, QuoteView, Settings, Shelf } from './screens'
 import { useStore } from './store'
+import { takeSwipeNav } from './swipe'
 
 /** How deep a route sits, so navigation can slide forward or back like iOS. */
 const depth = (hash: string) => {
@@ -33,10 +34,11 @@ function useRoute() {
       // While the filing ceremony covers the screen, it does the transition itself.
       if (!doc.startViewTransition || ceremonyActive() || matchMedia('(prefers-reduced-motion: reduce)').matches) return apply()
       const d = depth(next) - depth(current.current)
+      const swiped = takeSwipeNav()
       const detail = (h: string) => /^#\/(quote|book)\//.test(h)
       // A tapped card grows into its page (iOS zoom transition); otherwise push/pop.
       const zoom = hasMorph() && (detail(next) || detail(current.current))
-      document.documentElement.dataset.nav = zoom ? 'zoom' : d > 0 ? 'push' : d < 0 ? 'pop' : 'fade'
+      document.documentElement.dataset.nav = swiped ? (swiped > 0 ? 'swipe-next' : 'swipe-prev') : zoom ? 'zoom' : d > 0 ? 'push' : d < 0 ? 'pop' : 'fade'
       doc.startViewTransition(apply)
     }
     window.addEventListener('hashchange', on)

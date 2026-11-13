@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { formatIsbn, lookupIsbn, mergeInfo, parseGoogleBooks, parseOpenLibrary, toIsbn13 } from '../src/isbn.ts'
+import { formatIsbn, lookupIsbn, mergeInfo, parseGoogleBooks, parseOpenLibrary, pickGoogleCover, pickSearchCover, searchCover, toIsbn13 } from '../src/isbn.ts'
 
 // Checking and converting
 assert.equal(toIsbn13('978-0-14-118776-1'), '9780141187761')
@@ -76,5 +76,39 @@ assert.equal(fromGoogle!.source, 'Google Books')
 
 assert.equal(await lookupIsbn('9780060853983', fake({ 'openlibrary.org/api': {}, googleapis: { totalItems: 0 } })), null, 'no such book')
 await assert.rejects(lookupIsbn('9780060853983', fake({ 'openlibrary.org': new Error('offline'), googleapis: new Error('offline') })), /Couldn’t reach/)
+
+// Covers by title: only a clear match, never a near miss
+const search = (docs: unknown[]) => ({ docs })
+const pir = { title: 'Piranesi', author_name: ['Susanna Clarke'], cover_i: 10226290 }
+assert.equal(pickSearchCover(search([pir]), 'Piranesi', 'Susanna Clarke'), 'https://covers.openlibrary.org/b/id/10226290-L.jpg')
+assert.equal(
+  pickSearchCover(search([{ title: 'Supercommunicators', author_name: ['Charles Duhigg'], cover_i: 1 }]), 'Supercommunicators: How to Unlock the Secret Language of Connection', 'Charles Duhigg'),
+  'https://covers.openlibrary.org/b/id/1-L.jpg',
+  'the subtitle can differ',
+)
+assert.equal(pickSearchCover(search([{ ...pir, cover_i: undefined }]), 'Piranesi', 'Susanna Clarke'), undefined, 'no picture, no cover')
+assert.equal(pickSearchCover(search([{ title: 'A Study Guide for Piranesi', author_name: ['Gale'], cover_i: 2 }]), 'Piranesi', 'Susanna Clarke'), undefined, 'not a study guide')
+assert.equal(pickSearchCover(search([{ title: 'Inkheart', author_name: ['Sonia Sander'], cover_i: 3 }]), 'Inkheart', 'Cornelia Funke, Anthea Bell'), undefined, 'same title, another author')
+assert.equal(pickSearchCover(search([{ title: 'Inkheart 4', author_name: ['Cornelia Funke'], cover_i: 4 }]), 'Inkheart', 'Cornelia Funke'), undefined, 'not a sequel')
+assert.equal(pickSearchCover(search([{ title: 'Vachanamrut', author_name: ['Bhagwan Swaminarayan'], cover_i: 5 }]), 'Vachanāmrut', 'Bhagwan Swaminarayan'), 'https://covers.openlibrary.org/b/id/5-L.jpg', 'accents fold')
+assert.equal(pickSearchCover(search([{ title: 'Kafka on the Shore', author_name: ['村上春樹', 'Haruki Murakami'], cover_i: 6 }]), 'Kafka on the Shore', 'Haruki Murakami, Philip Gabriel'), 'https://covers.openlibrary.org/b/id/6-L.jpg', 'any shared surname')
+
+const gbook = (title: string, authors: string[], thumb = 'http://books.google.com/books/content?id=k&img=1&zoom=1&edge=curl') => ({ volumeInfo: { title, authors, imageLinks: { thumbnail: thumb } } })
+assert.equal(pickGoogleCover({ items: [gbook('Inkheart', ['Cornelia Funke'])] }, 'Inkheart', 'Cornelia Funke, Anthea Bell'), 'https://books.google.com/books/content?id=k&img=1&zoom=1')
+assert.equal(pickGoogleCover({ items: [gbook('Inkspell', ['Cornelia Funke'])] }, 'Inkheart', 'Cornelia Funke'), undefined)
+
+// Open Library first; Google only for what it misses, and not at all once it refuses
+calls.length = 0
+assert.ok(await searchCover('Piranesi', 'Susanna Clarke', fake({ 'search.json': search([pir]) })))
+assert.equal(calls.length, 1)
+calls.length = 0
+assert.ok(await searchCover('Inkheart', 'Cornelia Funke', fake({ 'search.json': search([]), googleapis: { items: [gbook('Inkheart', ['Cornelia Funke'])] } })))
+assert.equal(calls.length, 2)
+const refusing = async (url: string) => (calls.push(url), url.includes('googleapis') ? ({ ok: false, status: 429 }) as Response : json(search([])))
+calls.length = 0
+assert.equal(await searchCover('Inkheart', 'Cornelia Funke', refusing), undefined)
+assert.equal(await searchCover('Inkheart', 'Cornelia Funke', refusing), undefined)
+assert.equal(calls.filter((u) => u.includes('googleapis')).length, 1, 'a refused quota is not asked again')
+await assert.rejects(searchCover('Piranesi', '', fake({ 'search.json': new Error('offline') })))
 
 console.log('isbn tests passed')

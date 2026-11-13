@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BookCover, CaptureButton, GlassButton, Page, QuoteCard } from './components'
 import { DotSea } from './sea'
 import { Icon } from './icons'
@@ -7,6 +7,7 @@ import { PageArt } from './screens'
 import type { Store } from './store'
 import type { Quote } from './types'
 import { byPage, quoteOfTheDay, search } from './util'
+import { swipeTo, SwipeArea } from './swipe'
 
 type View = 'timeline' | 'books' | 'tags'
 type Tab = View | 'ocean'
@@ -17,7 +18,7 @@ const VIEWS: { value: View; label: string }[] = [
 ]
 /** The ocean is its own immersive screen, so its tab dives rather than switching views. */
 const TABS: { value: Tab; label: string }[] = [...VIEWS, { value: 'ocean', label: 'Ocean' }]
-const VIEW_KEY = 'commonplace.view'
+export const VIEW_KEY = 'commonplace.view'
 
 function SettingsButton({ store }: { store: Store }) {
   const k = store.syncState.kind
@@ -31,8 +32,17 @@ function SettingsButton({ store }: { store: Store }) {
 
 /** Shadowfax-style text tabs: the current one in ink, the rest quiet. */
 function TextTabs<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  const row = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // Sideways only: never scroll the page itself.
+    const r = row.current
+    const tab = r?.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (!r || !tab) return
+    const a = r.getBoundingClientRect(), b = tab.getBoundingClientRect()
+    r.scrollTo({ left: r.scrollLeft + b.left - a.left - (a.width - b.width) / 2, behavior: 'smooth' })
+  }, [value])
   return (
-    <div className="text-tabs" role="tablist">
+    <div ref={row} className="text-tabs" role="tablist">
       {options.map((o) => (
         <button
           key={o.value}
@@ -59,9 +69,24 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
     const saved = localStorage.getItem(VIEW_KEY) as View
     return VIEWS.some((v) => v.value === saved) ? saved : 'timeline'
   })
+  /** Which side the new view slides in from. */
+  const [from, setFrom] = useState<'left' | 'right' | null>(null)
   const setView = (v: View) => {
+    const order = TABS.map((t) => t.value)
+    setFrom(order.indexOf(v) > order.indexOf(view) ? 'right' : order.indexOf(v) < order.indexOf(view) ? 'left' : null)
     setViewState(v)
     localStorage.setItem(VIEW_KEY, v)
+  }
+  // Swiping runs through the views and on into the Books tab, in tab-bar order.
+  // The ocean is a dive you choose by tapping its tab, never one you fall into.
+  const stepView = (dir: 1 | -1) => {
+    const i = VIEWS.findIndex((t) => t.value === view) + dir
+    if (i === VIEWS.length) return swipeTo('/books', 1)
+    const next = VIEWS[i]?.value
+    if (!next) return false
+    haptic('tick')
+    setView(next)
+    return true
   }
   const results = useMemo(() => search(store.quotes, store.bookMap, query), [store.quotes, store.bookMap, query])
   const bookOf = (id?: string) => (id ? store.bookMap.get(id) : undefined)
@@ -124,11 +149,13 @@ export function Library({ store, freshId }: { store: Store; freshId?: string }) 
       ) : (
         <>
           <TextTabs<Tab> value={view} options={TABS} onChange={(v) => (v === 'ocean' ? (location.hash = '/ocean') : setView(v))} />
-          <div key={view} className="view-swap">
-            {view === 'timeline' && <Timeline store={store} freshId={freshId} />}
-            {view === 'books' && <ByBook store={store} />}
-            {view === 'tags' && <Tags store={store} />}
-          </div>
+          <SwipeArea onStep={stepView}>
+            <div key={view} className={`view-swap ${from ? `from-${from}` : ''}`}>
+              {view === 'timeline' && <Timeline store={store} freshId={freshId} />}
+              {view === 'books' && <ByBook store={store} />}
+              {view === 'tags' && <Tags store={store} />}
+            </div>
+          </SwipeArea>
         </>
       )}
     </Page>

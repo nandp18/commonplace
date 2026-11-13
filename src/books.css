@@ -94,3 +94,6 @@
 /* Inside a cream sheet, the cards sit on white paper instead. */
 .sheet .isbn-card, .sheet .book-fields { background-color: var(--bg); }
 .sheet .isbn-row .field-input { background: var(--field); }
+
+/* A settings toggle: the native iOS switch on Safari, a gold checkbox elsewhere. */
+.row-switch { margin-left: auto; flex: none; width: 22px; height: 22px; accent-color: var(--gold); }

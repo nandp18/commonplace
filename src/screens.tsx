@@ -14,10 +14,14 @@ import {
   Segmented,
 } from './components'
 import { bookDetails, BookForm } from './books'
+import { findCovers, needsCover, useCoverSearch } from './coverSearch'
+import { VIEW_KEY } from './library'
+import { swipeTo, SwipeArea } from './swipe'
 import { reflow, tidy } from './format'
 import { ShareSheet } from './ShareSheet'
 import { Icon } from './icons'
-import { parseImportFile, type ImportPlan } from './importFile'
+import { goodreadsFile, isGoodreadsCsv, parseGoodreads, type GoodreadsLibrary } from './goodreads'
+import { parseImportFile, type ImportFile, type ImportPlan } from './importFile'
 import { fileIntoSea } from './drop'
 import { haptic, markTransition, morphName, morphSource } from './motion'
 import { currentBookId, type Store } from './store'
@@ -86,6 +90,7 @@ export function Shelf({ store }: { store: Store }) {
       leading={<SettingsButton store={store} />}
       trailing={<GlassButton icon="plus" href="#/addbook" ariaLabel="Add a book" />}
     >
+      <SwipeArea onStep={(dir) => dir === -1 && (localStorage.setItem(VIEW_KEY, 'tags'), swipeTo('/', -1))}>
       {books.length === 0 && loose === 0 && (
         <div className="secondary center pad shelf-add-hint">
           <p>Scan a book’s barcode to put it on your shelf, or file a quote under it.</p>
@@ -121,7 +126,30 @@ export function Shelf({ store }: { store: Store }) {
           <Row icon="page" label="Loose pages" value={String(loose)} chevron href="#/book/loose" />
         </Group>
       )}
+      <FindCovers store={store} />
+      </SwipeArea>
     </Page>
+  )
+}
+
+/** Covers by title for books that came without one. Quiet until there's something to find. */
+function FindCovers({ store }: { store: Store }) {
+  const search = useCoverSearch()
+  const missing = store.books.filter(needsCover)
+  const result = search.total
+    ? `${search.found ? `Found ${search.found} of ${search.total} covers.` : `No cover found for ${search.total === 1 ? 'that book' : `those ${search.total} books`}.`}${
+        search.found < search.total ? ` ${search.found ? 'The rest keep' : 'They keep'} their cloth covers; you can add a photo from a book’s Edit screen.` : ''
+      }`
+    : undefined
+  if (!search.running && !missing.length && !search.error && !result) return null
+  return (
+    <Group footer={search.error ?? (search.running ? 'Searching Open Library by title and author.' : result)}>
+      {search.running ? (
+        <Row icon="search" label="Finding covers…" value={`${search.done} of ${search.total}`} />
+      ) : missing.length ? (
+        <Row icon="search" tint label={`Find covers for ${missing.length === 1 ? '1 book' : `${missing.length} books`}`} onClick={() => findCovers(store.patchBooks, missing)} />
+      ) : null}
+    </Group>
   )
 }
 
@@ -287,9 +315,16 @@ export function NewQuote({ store }: { store: Store }) {
   )
 }
 
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 const importSummary = (plan: ImportPlan) =>
-  [plan.quotes.length && `${plan.quotes.length} quotes`, plan.covers && `${plan.covers} covers`].filter(Boolean).join(' and ') ||
-  `${plan.books.length} books`
+  [
+    plan.quotes.length && plural(plan.quotes.length, 'quote'),
+    plan.newBooks && plural(plan.newBooks, 'book'),
+    // Covers only count on their own for books you already had.
+    !plan.newBooks && plan.covers && plural(plan.covers, 'cover'),
+  ]
+    .filter(Boolean)
+    .join(' and ') || `details for ${plural(plan.books.length, 'book')}`
 
 export function Settings({ store }: { store: Store }) {
   const existing = loadSyncConfig()
@@ -299,22 +334,51 @@ export function Settings({ store }: { store: Store }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const [plan, setPlan] = useState<ImportPlan | null>(null)
   const [importMsg, setImportMsg] = useState('')
+  /** A Goodreads export waiting for you to decide about its want-to-read shelf. */
+  const [goodreads, setGoodreads] = useState<{ lib: GoodreadsLibrary; toRead: boolean } | null>(null)
+
+  const preview = async (file: ImportFile, from = '') => {
+    const next = await store.previewImport(file)
+    // A file of books alone (Goodreads, or a backup of an empty shelf) skips books, not quotes.
+    const shelved = file.books.every((b) => !b.quotes.length) ? file.books.length - next.newBooks : 0
+    const already = next.skipped
+      ? ` ${next.skipped} already here will be skipped.`
+      : shelved
+        ? ` ${shelved} already on your shelf.`
+        : ''
+    if (next.quotes.length || next.books.length || next.covers) {
+      setPlan(next)
+      setImportMsg(`Ready to add ${importSummary(next)}${from}.${already}`)
+    } else {
+      setPlan(null)
+      setImportMsg(`Nothing new to add${from}.${already}`)
+    }
+  }
+
+  const previewGoodreads = (lib: GoodreadsLibrary, toRead: boolean) => {
+    setGoodreads({ lib, toRead })
+    return preview(goodreadsFile(lib, toRead), ' from Goodreads')
+  }
 
   const chooseImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0]
     e.target.value = '' // so picking the same file again still fires
     if (!picked) return
     setPlan(null)
+    setGoodreads(null)
     try {
-      const next = await store.previewImport(parseImportFile(await picked.text()))
-      const already = next.skipped ? ` ${next.skipped} already here will be skipped.` : ''
-      if (next.quotes.length || next.books.length || next.covers) {
-        setPlan(next)
-        setImportMsg(`Ready to add ${importSummary(next)}.${already}`)
-      } else setImportMsg(`Nothing new to add.${already}`)
+      const text = await picked.text()
+      if (isGoodreadsCsv(text)) await previewGoodreads(parseGoodreads(text), false)
+      else if (/\.csv$/i.test(picked.name)) throw new Error('Only a Goodreads library export can be imported as CSV.')
+      else await preview(parseImportFile(text))
     } catch (err) {
       setImportMsg((err as Error).message)
     }
+  }
+  const cancelImport = () => {
+    setPlan(null)
+    setGoodreads(null)
+    setImportMsg('')
   }
 
   const [backedUp, setBackedUp] = useState(() => Number(localStorage.getItem(BACKUP_KEY)) || 0)
@@ -403,8 +467,29 @@ export function Settings({ store }: { store: Store }) {
         )}
       </Group>
 
-      <Group header="Import" footer={importMsg || 'Restores a backup, or adds quotes from an import file. Quotes you already have are skipped.'}>
-        <input ref={fileInput} type="file" accept=".json,application/json" hidden onChange={chooseImport} />
+      <Group
+        header="Import"
+        footer={
+          importMsg || (
+            <>
+              Restores a backup, adds quotes from an import file, or brings in your Goodreads books (on goodreads.com: My Books →
+              Import and export → Export library). Anything you already have is skipped.
+            </>
+          )
+        }
+      >
+        <input ref={fileInput} type="file" accept=".json,application/json,.csv,text/csv" hidden onChange={chooseImport} />
+        {goodreads && goodreads.lib.toRead.length > 0 && (
+          <Row label={`Include want-to-read (${goodreads.lib.toRead.length})`}>
+            <input
+              type="checkbox"
+              className="row-switch"
+              {...{ switch: '' }}
+              checked={goodreads.toRead}
+              onChange={(e) => previewGoodreads(goodreads.lib, e.target.checked)}
+            />
+          </Row>
+        )}
         {plan ? (
           <>
             <Row
@@ -412,18 +497,20 @@ export function Settings({ store }: { store: Store }) {
               label={`Add ${importSummary(plan)}`}
               onClick={async () => {
                 await store.applyImport(plan)
-                setImportMsg(`Added ${importSummary(plan)}.`)
+                const coverless = plan.books.filter(needsCover)
+                setImportMsg(
+                  `Added ${importSummary(plan)}.${coverless.length ? ` Looking up covers by title for ${coverless.length} without one; watch them arrive on the Books tab.` : ''}`,
+                )
                 setPlan(null)
+                setGoodreads(null)
+                // Books from Goodreads often lack an ISBN; find what covers we can, in the background.
+                if (coverless.length) findCovers(store.patchBooks, coverless)
               }}
             />
-            <Row
-              label="Cancel"
-              onClick={() => {
-                setPlan(null)
-                setImportMsg('')
-              }}
-            />
+            <Row label="Cancel" onClick={cancelImport} />
           </>
+        ) : goodreads ? (
+          <Row label="Cancel" onClick={cancelImport} />
         ) : (
           <Row tint label="Restore or import a file" onClick={() => fileInput.current?.click()} />
         )}

@@ -124,6 +124,21 @@ export function useStore() {
     [scheduleSync],
   )
 
+  /** Small changes to many books at once, each onto its newest copy (a cover search finishing). */
+  const patchBooks = useCallback(
+    async (patches: { book: Book; patch: Partial<Book> }[]) => {
+      if (!patches.length) return
+      const now = Date.now()
+      const next = patches.map(({ book, patch }) => ({ ...(latest.current.books.find((b) => b.id === book.id) ?? book), ...patch, updatedAt: now }))
+      const byId = new Map(next.map((b) => [b.id, b]))
+      latest.current = { ...latest.current, books: latest.current.books.map((b) => byId.get(b.id) ?? b) }
+      await putBooks(next)
+      setAll((c) => ({ ...c, books: c.books.map((b) => byId.get(b.id) ?? b) }))
+      scheduleSync()
+    },
+    [scheduleSync],
+  )
+
   const saveQuote = useCallback(
     async (q: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Quote, 'id' | 'createdAt'>>) => {
       const now = Date.now()
@@ -203,7 +218,7 @@ export function useStore() {
   const hasSamples = useMemo(() => all.quotes.some((q) => isSample(q.id)), [all.quotes])
 
   return {
-    ready, books, bookMap, quotes, saveBook, updateBook, saveQuote, updateQuote, deleteQuote,
+    ready, books, bookMap, quotes, saveBook, updateBook, patchBooks, saveQuote, updateQuote, deleteQuote,
     syncState, runSync, loadSamples, removeSamples, hasSamples, previewImport, applyImport,
   }
 }

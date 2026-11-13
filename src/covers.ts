@@ -16,6 +16,26 @@ let loading: Promise<void> | null = null
 const inFlight = new Set<string>()
 /** Links that can't be downloaded (no CORS, or gone): shown straight from the web instead. */
 const unfetchable = new Set<string>()
+/** Links with no cover behind them (Open Library has none for that ISBN): remembered, so they're not asked again. */
+const MISSING_KEY = 'commonplace.missingCovers'
+const missing = new Set<string>(
+  (() => {
+    try {
+      return JSON.parse(localStorage.getItem(MISSING_KEY) ?? '[]') as string[]
+    } catch {
+      return []
+    }
+  })(),
+)
+/** Open Library has no image behind this link (found out when it was first shown). */
+export const isMissingCover = (url: string) => missing.has(url)
+
+function markMissing(url: string) {
+  missing.add(url)
+  try {
+    localStorage.setItem(MISSING_KEY, JSON.stringify([...missing].slice(-2000)))
+  } catch {}
+}
 
 function emit() {
   version++
@@ -53,11 +73,30 @@ export async function shrink(blob: Blob, longest = 720): Promise<Blob> {
   }
 }
 
+/** A whole imported shelf asks at once; take covers a few at a time. */
+let active = 0
+const waiting: (() => void)[] = []
+async function slot<T>(work: () => Promise<T>): Promise<T> {
+  if (active >= 4) await new Promise<void>((r) => waiting.push(r))
+  active++
+  try {
+    return await work()
+  } finally {
+    active--
+    waiting.shift()?.()
+  }
+}
+
 /** Downloads a cover, or null if the site won't share it with a web app. */
-export async function fetchCover(url: string): Promise<Blob | null> {
-  if (unfetchable.has(url)) return null
+export const fetchCover = (url: string) => slot(() => download(url))
+
+async function download(url: string): Promise<Blob | null> {
+  if (unfetchable.has(url) || missing.has(url)) return null
+  // baps.org doesn't share its images with web apps; don't ask, just show the link.
+  if (url.startsWith('https://www.baps.org/')) return unfetchable.add(url), null
   try {
     const res = await fetch(url, { mode: 'cors', signal: AbortSignal.timeout(12000) })
+    if (res.status === 404) markMissing(url)
     const blob = res.ok ? await res.blob() : null
     // Open Library answers a missing cover with a 1×1 gif.
     if (!blob || !blob.type.startsWith('image/') || blob.size < 1000) throw new Error('no image')
@@ -111,5 +150,5 @@ export function useCoverSrc(book: Book, skip = false): string | undefined {
     })
   }, [book.id, link, skip])
 
-  return fresh ?? book.cover
+  return fresh ?? (book.cover && missing.has(book.cover) ? undefined : book.cover)
 }

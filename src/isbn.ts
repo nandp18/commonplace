@@ -151,3 +151,74 @@ export async function lookupIsbn(isbn: string, f: Fetch = fetch): Promise<BookIn
   }
   return info
 }
+
+/* ───────────── Covers by title, for books without an ISBN ───────────── */
+
+/** Letters and digits only, accents and case folded: "Vachanāmrut" ≈ "vachanamrut". */
+const fold = (s: string) =>
+  s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+/** The title before any subtitle: "Supercommunicators: How to…" → "supercommunicators". */
+const mainTitle = (s: string) => fold(s.split(/[:–—]/)[0])
+/** Surnames, roughly: the last word of each author with at least three letters. */
+const surnames = (authors: string[]) =>
+  new Set(authors.map((a) => fold(a).split(' ').filter((w) => w.length >= 3).pop()).filter(Boolean) as string[])
+
+/**
+ * The cover of the Open Library work that is clearly this book: same main title, and a
+ * shared surname when we know the author. A near miss is worse than the cloth cover.
+ * `https://openlibrary.org/search.json?title=…&author=…&fields=title,author_name,cover_i`
+ */
+export function pickSearchCover(json: unknown, title: string, author: string): string | undefined {
+  type Doc = { title?: string; author_name?: string[]; cover_i?: number }
+  const docs = (json as { docs?: Doc[] } | null)?.docs ?? []
+  const want = mainTitle(title)
+  const mine = surnames(author.split(','))
+  if (!want) return undefined
+  for (const d of docs) {
+    if (!d.cover_i || !d.title || mainTitle(d.title) !== want) continue
+    if (mine.size && ![...surnames(d.author_name ?? [])].some((s) => mine.has(s))) continue
+    return `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg`
+  }
+  return undefined
+}
+
+/** Same rule for Google Books results, which know translated books by their English titles. */
+export function pickGoogleCover(json: unknown, title: string, author: string): string | undefined {
+  type Item = { volumeInfo?: { title?: string; authors?: string[]; imageLinks?: { thumbnail?: string } } }
+  const items = (json as { items?: Item[] } | null)?.items ?? []
+  const want = mainTitle(title)
+  const mine = surnames(author.split(','))
+  for (const { volumeInfo: v } of items) {
+    const thumb = v?.imageLinks?.thumbnail
+    if (!thumb || !v?.title || mainTitle(v.title) !== want) continue
+    if (mine.size && ![...surnames(v.authors ?? [])].some((s) => mine.has(s))) continue
+    return https(thumb)?.replace(/&edge=curl/, '')
+  }
+  return undefined
+}
+
+/** Google's keyless quota is shared by everyone and runs out; once it says no, stop asking. */
+let googleRefused = false
+
+/**
+ * Open Library by title and first author, then Google Books if it's answering.
+ * Throws only when Open Library can't be reached, so the caller can try again later.
+ */
+export async function searchCover(title: string, author: string, f: Fetch = fetch): Promise<string | undefined> {
+  const main = title.split(/[:–—]/)[0].trim()
+  const first = author.split(',')[0].trim()
+  const q = new URLSearchParams({ title: main, limit: '10', fields: 'title,author_name,cover_i' })
+  if (first) q.set('author', first)
+  const res = await f(`https://openlibrary.org/search.json?${q}`, { signal: AbortSignal.timeout(12000) })
+  if (!res.ok) throw new Error(`Open Library ${res.status}`)
+  const found = pickSearchCover(await res.json(), title, author)
+  if (found || googleRefused) return found
+  try {
+    const g = new URLSearchParams({ q: `intitle:"${main}"${first ? ` inauthor:${first.split(' ').pop()}` : ''}`, maxResults: '5' })
+    const gr = await f(`https://www.googleapis.com/books/v1/volumes?${g}`, { signal: AbortSignal.timeout(9000) })
+    if (gr.status === 429 || gr.status === 403) googleRefused = true
+    return gr.ok ? pickGoogleCover(await gr.json(), title, author) : undefined
+  } catch {
+    return undefined
+  }
+}
