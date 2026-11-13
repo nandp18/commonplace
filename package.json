@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host",
-    "test": "node tests/selection.test.ts && node tests/sync.test.ts && node tests/import.test.ts && node tests/tide.test.ts && node tests/transliterate.test.ts && node tests/shareCard.test.ts && node tests/capture.test.ts && node tests/flatten.test.ts && node tests/chandra.test.ts && node tests/backup.test.ts && node tests/isbn.test.ts && node tests/goodreads.test.ts && node tests/baps.test.ts"
+    "test": "node tests/selection.test.ts && node tests/sync.test.ts && node tests/import.test.ts && node tests/tide.test.ts && node tests/transliterate.test.ts && node tests/shareCard.test.ts && node tests/capture.test.ts && node tests/flatten.test.ts && node tests/chandra.test.ts && node tests/backup.test.ts && node tests/isbn.test.ts && node tests/goodreads.test.ts && node tests/baps.test.ts && node tests/bookSort.test.ts"
   },
   "dependencies": {
     "barcode-detector": "3.2.3",

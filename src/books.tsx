@@ -321,23 +321,29 @@ export function BookForm({
       <div className={`cover-edit ${status.kind === 'looking' ? 'looking' : ''}`}>
         <BookCover book={preview} size="large" src={previewSrc} />
         <div className="cover-edit-actions">
-          <label className="text-button">
-            {previewSrc === null || (!cover && !picture && !book?.cover) ? 'Photograph cover' : 'Replace with photo'}
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="sr-only"
-              onChange={async (e) => {
-                const file = e.target.files?.[0]
-                e.target.value = ''
-                if (!file) return
-                const blob = await shrink(file)
-                setPicture({ blob, url: URL.createObjectURL(blob), src: 'photo' })
-                setCleared(false)
-              }}
-            />
-          </label>
+          {/* The camera, or a picture already in your photo library (a screenshot of a cover works too). */}
+          {[
+            { label: previewSrc === null || (!cover && !picture && !book?.cover) ? 'Photograph cover' : 'Take photo', camera: true },
+            { label: 'From Photos', camera: false },
+          ].map(({ label, camera }) => (
+            <label key={label} className="text-button">
+              {label}
+              <input
+                type="file"
+                accept="image/*"
+                {...(camera ? { capture: 'environment' as const } : {})}
+                className="sr-only"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = ''
+                  if (!file) return
+                  const blob = await shrink(file)
+                  setPicture({ blob, url: URL.createObjectURL(blob), src: 'photo' })
+                  setCleared(false)
+                }}
+              />
+            </label>
+          ))}
           {previewSrc !== null && (cover || picture || book?.cover) && (
             <button
               type="button"

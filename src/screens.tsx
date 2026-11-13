@@ -14,6 +14,7 @@ import {
   Segmented,
 } from './components'
 import { bookDetails, BookForm } from './books'
+import { BOOK_SORTS, loadBookSort, saveBookSort, sortBooks, type BookSort } from './bookSort'
 import { findCovers, needsCover, useCoverSearch } from './coverSearch'
 import { VIEW_KEY } from './library'
 import { swipeTo, SwipeArea } from './swipe'
@@ -79,8 +80,8 @@ export function Shelf({ store }: { store: Store }) {
     for (const q of store.quotes) m.set(q.bookId ?? '', (m.get(q.bookId ?? '') ?? 0) + 1)
     return m
   }, [store.quotes])
-  // Quoted books first, the ones you've only added after them.
-  const books = [...store.books].sort((a, b) => Number(!counts.get(a.id)) - Number(!counts.get(b.id)))
+  const [sortBy, setSortBy] = useState<BookSort>(loadBookSort)
+  const books = useMemo(() => sortBooks(store.books, store.quotes, sortBy), [store.books, store.quotes, sortBy])
   const loose = store.quotes.filter((q) => !q.bookId || !store.bookMap.has(q.bookId)).length
   const quoteCount = (n = 0) => (n ? `${n} ${n === 1 ? 'quote' : 'quotes'}` : 'no quotes yet')
 
@@ -97,6 +98,29 @@ export function Shelf({ store }: { store: Store }) {
           <a className="ink-button" href="#/addbook?scan=1">
             <Icon name="barcode" size={18} /> Scan a book
           </a>
+        </div>
+      )}
+      {books.length > 1 && (
+        <div className="shelf-sort">
+          <span>{books.length} books</span>
+          {/* The native picker, so it's the iPhone's own wheel; the label is what you see. */}
+          <label className="shelf-sort-pick">
+            {BOOK_SORTS.find((o) => o.value === sortBy)?.label} <span aria-hidden="true">↕</span>
+            <select
+              aria-label="Sort books"
+              value={sortBy}
+              onChange={(e) => {
+                const next = e.target.value as BookSort
+                haptic('tick')
+                setSortBy(next)
+                saveBookSort(next)
+              }}
+            >
+              {BOOK_SORTS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
         </div>
       )}
       <div className="cover-grid">
