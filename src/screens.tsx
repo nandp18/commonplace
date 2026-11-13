@@ -261,7 +261,13 @@ export function NewQuote({ store }: { store: Store }) {
       lang,
     })
     // The same ceremony as a captured quote: it gathers into a drop and falls into the sea.
-    editor.current?.blur() // put the keyboard away for the show
+    // Put the keyboard away for the show, and let the screen grow back before it starts.
+    if (document.activeElement === editor.current) {
+      editor.current?.blur()
+      const vv = window.visualViewport
+      if (vv && vv.height < innerHeight - 80) await new Promise((r) => { vv.addEventListener('resize', r, { once: true }); setTimeout(r, 450) })
+      else await new Promise((r) => setTimeout(r, 120))
+    }
     if (editor.current) await fileIntoSea(editor.current, q.id, () => go(`/?new=${q.id}`))
     else go(`/?new=${q.id}`)
   }

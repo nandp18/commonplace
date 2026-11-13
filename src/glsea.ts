@@ -33,6 +33,22 @@ float waves(vec2 p, float t) {
   return h;
 }
 
+// Light caught by the ripples: the crest of each ring glints, and the water flashes
+// where something went in.
+float ringLight(vec2 p, float t) {
+  float l = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec4 r = uRipples[i];
+    float a = t - r.z;
+    if (r.w <= 0.0 || a <= 0.0) continue;
+    float dc = distance(p, r.xy);
+    float d = dc - a * 2.6;
+    l += r.w * 1.1 * exp(-d * d * 6.0) * exp(-a * 1.1);
+    l += r.w * 1.6 * exp(-dc * dc * 4.0) * exp(-a * 4.5);
+  }
+  return l;
+}
+
 vec3 normalAt(vec2 p, float t) {
   float e = 0.06;
   float hx = waves(p - vec2(e, 0.0), t) - waves(p + vec2(e, 0.0), t);
@@ -66,7 +82,7 @@ vec2 scene(vec2 q) {
   vec3 r = reflect(d, n);
   r.y = abs(r.y);
   float fres = 0.02 + 0.98 * pow(1.0 - max(dot(-d, n), 0.0), 5.0);
-  float deep = mix(0.30, 0.015, uNight);
+  float deep = mix(0.30, 0.065, uNight); // never quite black, so the water reaches the bottom of the screen
   // Faces tilted toward the light catch a little of it: this is what draws the swell.
   float facing = smoothstep(-0.05, 0.35, n.z + 0.3 * n.x);
   float body = deep + mix(0.22, 0.26, uNight) * facing * exp(-dist * 0.025);
@@ -74,7 +90,8 @@ vec2 scene(vec2 q) {
   float c = mix(body, sky(r), fres) + spec;
   // Haze toward the horizon.
   c = mix(c, sky(normalize(vec3(d.x, 0.002, d.z))), 1.0 - exp(-dist * 0.012));
-  return vec2(c, clamp(spec * 1.6, 0.0, 1.0));
+  float rl = ringLight(hit.xz, uTime);
+  return vec2(c + rl * 0.55, clamp(max(spec * 1.6, rl), 0.0, 1.0));
 }
 
 float bayer4(vec2 p) {
@@ -179,6 +196,8 @@ export function createSea(canvas: HTMLCanvasElement, cellCss = 9) {
     resize,
     render(f: SeaFrame) {
       last = f
+      // Follow the canvas's size (a keyboard closing, a rotation) without waiting for an event.
+      if (canvas.width !== Math.round(canvas.clientWidth * dpr) || canvas.height !== Math.round(canvas.clientHeight * dpr)) resize()
       gl.uniform2f(U.res, canvas.width, canvas.height)
       gl.uniform1f(U.time, f.time)
       gl.uniform1f(U.cell, cellCss * dpr)

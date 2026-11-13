@@ -126,6 +126,7 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
   const flash = el('div', 'ceremony-flash')
   const barTop = el('div', 'ceremony-bar top')
   const barBottom = el('div', 'ceremony-bar bottom')
+  let barsOpen = false
   overlay.append(night, glCanvas, canvas, world, vignette, flash, barTop, barBottom)
   document.body.append(overlay)
   overlay.addEventListener('pointerdown', () => {
@@ -269,7 +270,7 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
     const drip = 200, fall = 950
     const t0 = performance.now()
     const startCam = { ...cam }
-    const endCam = { x: W / 2, y: surfaceY - H * 0.12, s: 0.92 }
+    const endCam = { x: W / 2, y: surfaceY - H * 0.16, s: 0.92 }
     bead.animate(
       [
         { transform: 'scale(1)' },
@@ -280,6 +281,11 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
       { duration: drip + fall, easing: 'ease-in', fill: 'forwards' },
     )
     halo.animate([{ opacity: 1 }, { opacity: 0.35 }], { duration: drip + fall, fill: 'forwards' })
+    // The frame opens up: the bars draw back so the sea fills the whole screen.
+    const open = { duration: 900, delay: drip + 150, easing: 'cubic-bezier(0.5, 0, 0.3, 1)', fill: 'forwards' } as const
+    barTop.animate([{ transform: 'none' }, { transform: 'translateY(-100%)' }], open)
+    barBottom.animate([{ transform: 'none' }, { transform: 'translateY(100%)' }], open)
+    barsOpen = true
     follow = (now) => {
       const t = now - t0
       if (t < drip) {
@@ -288,26 +294,36 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
         return startCam
       }
       const p = Math.min(1, (t - drip) / fall)
-      const q = p * p // gravity; the camera keeps pace, so the drop stays near the middle
-      dropY = lerp(center.y - 6, surfaceY, q)
-      return { x: lerp(startCam.x, endCam.x, q), y: lerp(startCam.y, endCam.y, q), s: lerp(startCam.s, endCam.s, easeInOut(p)) }
+      // The drop falls under gravity, ever faster, and the camera falls with it on the same
+      // curve but a shorter way, so the drop slides steadily down the frame (never back up it)
+      // and strikes the water below the middle.
+      dropY = lerp(center.y - 6, surfaceY, p * p)
+      const e = p * p
+      return { x: lerp(startCam.x, endCam.x, e), y: lerp(startCam.y, endCam.y, e), s: lerp(startCam.s, endCam.s, e) }
     }
     await wait(drip + fall)
   }
 
   if (!skipped) {
     // 5. Impact.
-    follow = null
-    tween = null
-    drop.style.opacity = '0'
+    // The drop doesn't vanish: it flattens into the surface and is gone beneath it.
+    bead.animate(
+      [
+        { transform: 'scale(0.55, 1.7)', opacity: 1 },
+        { transform: 'translateY(3px) scale(1.7, 0.4)', opacity: 1, offset: 0.45 },
+        { transform: 'translateY(6px) scale(0.4, 0.15)', opacity: 0 },
+      ],
+      { duration: 150, easing: 'ease-out', fill: 'forwards' },
+    )
+    halo.animate([{ opacity: 0.35 }, { opacity: 0 }], { duration: 400, fill: 'forwards' })
     sea.splash(center.x)
-    shake = { t0: performance.now(), amp: 9 }
-    flash.animate([{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 0 }], { duration: 700, easing: 'ease-out' })
+    shake = { t0: performance.now(), amp: 5 }
+    flash.animate([{ opacity: 0 }, { opacity: 0.7, offset: 0.1 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' })
     haptic('success')
-    await wait(220)
-    // 6. The drop sinks, glowing, into the depths, as the camera rises and pulls back on the whole sea.
+    // 6. A slow push in on the rings as the drop sinks, glowing, into the depths.
+    camTo({ y: surfaceY - H * 0.11, s: 1.0 }, 2600, easeInOut)
+    await wait(260)
     sinking = { t0: performance.now() }
-    camTo({ y: surfaceY - H * 0.08, s: 0.8 }, 2200, easeOut)
     await wait(1700)
   }
 
@@ -316,8 +332,10 @@ export async function fileIntoSea(source: HTMLElement, id: string, navigate: () 
   navigate()
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
   const out = skipped ? 250 : 750
-  barTop.animate([{ transform: 'none' }, { transform: 'translateY(-100%)' }], { duration: out, easing: 'ease-in', fill: 'forwards' })
-  barBottom.animate([{ transform: 'none' }, { transform: 'translateY(100%)' }], { duration: out, easing: 'ease-in', fill: 'forwards' })
+  if (!barsOpen) {
+    barTop.animate([{ transform: 'none' }, { transform: 'translateY(-100%)' }], { duration: out, easing: 'ease-in', fill: 'forwards' })
+    barBottom.animate([{ transform: 'none' }, { transform: 'translateY(100%)' }], { duration: out, easing: 'ease-in', fill: 'forwards' })
+  }
   await overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: out, easing: 'ease-in-out', fill: 'forwards' }).finished
   cancelAnimationFrame(raf)
   overlay.remove()
@@ -339,12 +357,13 @@ function startSea(glCanvas: HTMLCanvasElement, canvas: HTMLCanvasElement, W: num
   canvas.width = W * dpr
   canvas.height = H * dpr
   const ctx = canvas.getContext('2d')!
-  // The horizon sits a little beyond where the drop lands, so it lands in the water.
-  const horizonY = surfaceY - H * 0.2
+  // The horizon sits well beyond where the drop lands, so it lands in near water where its rings are big.
+  const horizonY = surfaceY - H * 0.34
   let seed = 7
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647
   const splashes: { x: number; t0: number }[] = []
-  const spray: { x: number; y: number; vx: number; vy: number; r: number }[] = []
+  /** Droplets, in the scene's coordinates; each leaves the water at `at`. */
+  const spray: { x: number; y: number; vx: number; vy: number; r: number; at: number }[] = []
   let last = 0
   let cam: Cam = { x: W / 2, y: H / 2, s: 1 }
   const t0 = performance.now()
@@ -361,13 +380,19 @@ function startSea(glCanvas: HTMLCanvasElement, canvas: HTMLCanvasElement, W: num
 
     // A glow where it went in.
     for (const sp of splashes) {
-      const g = Math.max(0, 0.55 * Math.exp(-((now - sp.t0) / 1000) * 1.1))
+      const g = Math.max(0, 0.5 * Math.exp(-((now - sp.t0) / 1000) * 2.6))
       if (g < 0.01) continue
-      const grad = ctx.createRadialGradient(sp.x, surfaceY, 0, sp.x, surfaceY, 190)
-      grad.addColorStop(0, `rgba(${GOLD}, ${g})`)
+      const grad = ctx.createRadialGradient(sp.x, surfaceY, 0, sp.x, surfaceY, 60)
+      grad.addColorStop(0, `rgba(255, 240, 205, ${g})`)
+      grad.addColorStop(0.4, `rgba(${GOLD}, ${g * 0.5})`)
       grad.addColorStop(1, `rgba(${GOLD}, 0)`)
       ctx.fillStyle = grad
-      ctx.fillRect(sp.x - 190, surfaceY - 190, 380, 380)
+      ctx.save()
+      ctx.translate(sp.x, surfaceY)
+      ctx.scale(1, 0.35) // lying on the water, seen from a low angle
+      ctx.translate(-sp.x, -surfaceY)
+      ctx.fillRect(sp.x - 60, surfaceY - 60, 120, 120)
+      ctx.restore()
     }
 
     // The drop, sunk: a glowing mote drifting down into the dark.
@@ -390,7 +415,8 @@ function startSea(glCanvas: HTMLCanvasElement, canvas: HTMLCanvasElement, W: num
 
     ctx.fillStyle = `rgb(${GOLD})`
     for (const s of spray) {
-      s.vy += 1100 * dt
+      if (now < s.at) continue
+      s.vy += 950 * dt
       s.x += s.vx * dt
       s.y += s.vy * dt
       ctx.beginPath()
@@ -403,23 +429,35 @@ function startSea(glCanvas: HTMLCanvasElement, canvas: HTMLCanvasElement, W: num
   return {
     draw,
     splash(x: number) {
-      splashes.push({ x, t0: performance.now() })
+      const now = performance.now()
+      splashes.push({ x, t0: now })
       // Rings on the water, one after another, from where it landed on screen.
       const sx = W / 2 + (x - cam.x) * cam.s, sy = H / 2 + (surfaceY - cam.y) * cam.s
       water?.ripple(sx, sy, 0.55)
-      water?.ripple(sx, sy, 0.38, 0.3)
-      water?.ripple(sx, sy, 0.25, 0.65)
-      // A crown of spray, tallest in the middle, and a few fine droplets flung wide.
-      for (let i = 0; i < 34; i++) {
-        const u = i / 33 - 0.5
-        const a = -Math.PI / 2 + u * 2.3 + (rand() - 0.5) * 0.2
-        const v = 220 + 300 * (1 - Math.abs(u) * 1.4) * (0.7 + rand() * 0.5)
-        spray.push({ x, y: surfaceY - 2, vx: Math.cos(a) * v * 0.75, vy: Math.sin(a) * v * 1.35, r: 1 + rand() * 2 })
+      water?.ripple(sx, sy, 0.38, 0.32)
+      water?.ripple(sx, sy, 0.24, 0.7)
+      // A crown: droplets thrown up and outward from a ring around the point of entry,
+      // flattened by the low angle we see the water from.
+      for (let i = 0; i < 38; i++) {
+        const a = (i / 38) * Math.PI * 2 + rand() * 0.15
+        const out = 70 + rand() * 70
+        spray.push({
+          x: x + Math.cos(a) * 9, y: surfaceY + Math.sin(a) * 2.5,
+          vx: Math.cos(a) * out, vy: -(240 + rand() * 120) + Math.sin(a) * 25,
+          r: 0.9 + rand() * 1.4, at: now,
+        })
       }
-      for (let i = 0; i < 14; i++) {
-        const a = -Math.PI / 2 + (rand() - 0.5) * 2.8
-        const v = 380 + rand() * 260
-        spray.push({ x, y: surfaceY - 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 0.6 + rand() * 0.6 })
+      // Then the jet: a column rising from the middle as the crater closes, which throws
+      // off one bright droplet at its top.
+      for (let i = 0; i < 7; i++) {
+        spray.push({ x: x + (rand() - 0.5) * 2, y: surfaceY, vx: (rand() - 0.5) * 8, vy: -(250 + i * 38), r: 2.2 - i * 0.15, at: now + 160 })
+      }
+      spray.push({ x, y: surfaceY, vx: 6, vy: -560, r: 2.8, at: now + 175 })
+      // And a few fine droplets flung wide.
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (rand() - 0.5) * 2.6
+        const v = 300 + rand() * 200
+        spray.push({ x, y: surfaceY - 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.9, r: 0.5 + rand() * 0.5, at: now })
       }
     },
   }
