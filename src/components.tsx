@@ -153,8 +153,11 @@ export function QuoteText({
   marks = true,
   morph,
   reveal,
+  latin,
 }: {
   text: string
+  /** Show a Gujarati passage in Latin letters instead of its own script. */
+  latin?: boolean
   highlight?: string
   uncertain?: string[]
   className?: string
@@ -165,7 +168,9 @@ export function QuoteText({
   /** Wrap in quotation marks, the opening one hung in the margin in gold. */
   marks?: boolean
 }) {
-  const gu = isGujarati(text)
+  const roman = latin && isGujarati(text)
+  if (roman) text = transliterate(text)
+  const gu = !roman && isGujarati(text)
   // Don't double up if the passage already opens with its own quotation mark.
   const quoted = marks && !/^[“‘"'…]/.test(text)
   const terms = highlight?.trim().split(/\s+/).filter(Boolean) ?? []
@@ -199,22 +204,15 @@ export function QuoteText({
   }
 
   return (
-    <>
-      <div
-        className={`quote-text ${gu ? 'gu' : ''} ${quoted ? 'quoted' : ''} ${reveal ? 'revealing' : ''} ${className}`}
-        lang={gu ? 'gu' : 'en'}
-        style={morph ? ({ viewTransitionName: morph } as React.CSSProperties) : undefined}
-      >
-        {text.split(/\n{2,}/).map((p, i) => (
-          <p key={i}>{renderPara(p)}</p>
-        ))}
-      </div>
-      {gu && (
-        <div className={`translit ${className.includes('clamp') ? 'clamp' : ''}`} lang="gu-Latn">
-          {transliterate(text)}
-        </div>
-      )}
-    </>
+    <div
+      className={`quote-text ${gu ? 'gu' : ''} ${quoted ? 'quoted' : ''} ${reveal ? 'revealing' : ''} ${className}`}
+      lang={gu ? 'gu' : roman ? 'gu-Latn' : 'en'}
+      style={morph ? ({ viewTransitionName: morph } as React.CSSProperties) : undefined}
+    >
+      {text.split(/\n{2,}/).map((p, i) => (
+        <p key={i}>{renderPara(p)}</p>
+      ))}
+    </div>
   )
 }
 
@@ -642,6 +640,7 @@ export function EditableQuote({
   large,
   morph,
   reveal,
+  latin,
 }: {
   store: Store
   quote: Quote
@@ -649,6 +648,8 @@ export function EditableQuote({
   large?: boolean
   morph?: string
   reveal?: boolean
+  /** Show a Gujarati quote in Latin letters (editing is always in the original). */
+  latin?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(quote.text)
@@ -691,6 +692,7 @@ export function EditableQuote({
         className={large ? 'large' : ''}
         morph={morph}
         reveal={reveal && !edited}
+        latin={latin}
       />
     </button>
   )

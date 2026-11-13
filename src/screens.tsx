@@ -18,7 +18,8 @@ import { BOOK_SORTS, loadBookSort, saveBookSort, sortBooks, type BookSort } from
 import { findCovers, needsCover, useCoverSearch } from './coverSearch'
 import { VIEW_KEY } from './library'
 import { swipeTo, SwipeArea } from './swipe'
-import { reflow, tidy } from './format'
+import { isGujarati, reflow, tidy } from './format'
+import { transliterate } from './transliterate'
 import { ShareSheet } from './ShareSheet'
 import { Icon } from './icons'
 import { goodreadsFile, isGoodreadsCsv, parseGoodreads, type GoodreadsLibrary } from './goodreads'
@@ -227,14 +228,38 @@ export function BookView({ store, id }: { store: Store; id: string }) {
   )
 }
 
+/** Whether Gujarati quotes open in Latin letters: remembered on this device. */
+const SCRIPT_KEY = 'commonplace.script'
+const loadLatin = () => {
+  try {
+    return localStorage.getItem(SCRIPT_KEY) === 'latin'
+  } catch {
+    return false
+  }
+}
+
 export function QuoteView({ store, id }: { store: Store; id: string }) {
   const quote = store.quotes.find((q) => q.id === id)
   const [copied, setCopied] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [latin, setLatin] = useState(loadLatin)
   if (!quote) return <Page title="" back="#/">{null}</Page>
   const book = quote.bookId ? store.bookMap.get(quote.bookId) : undefined
   const credit = [book?.title, book?.author, quote.page && `p. ${quote.page}`].filter(Boolean).join(', ')
-  const shareText = `“${quote.text}”${credit ? `\n— ${credit}` : ''}`
+  const gu = isGujarati(quote.text)
+  const roman = gu && latin
+  const chooseLatin = (v: boolean) => {
+    if (v === latin) return
+    haptic('tick')
+    setLatin(v)
+    try {
+      localStorage.setItem(SCRIPT_KEY, v ? 'latin' : 'original')
+    } catch {
+      /* remembered for this visit only */
+    }
+  }
+  // Copy what's on screen.
+  const shareText = `“${roman ? transliterate(quote.text) : quote.text}”${credit ? `\n— ${credit}` : ''}`
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(shareText)
@@ -262,7 +287,17 @@ export function QuoteView({ store, id }: { store: Store; id: string }) {
     >
       <ShareSheet open={sharing} onClose={() => setSharing(false)} quote={quote} book={book} shareText={shareText} />
       <article className={`quote-hero ${copied ? 'copied' : ''}`}>
-        <EditableQuote store={store} quote={quote} large morph={morphName('quote', quote.id, 'detail')} />
+        <EditableQuote store={store} quote={quote} large latin={roman} morph={morphName('quote', quote.id, 'detail')} />
+        {gu && (
+          <div className="script-toggle" role="radiogroup" aria-label="Script">
+            <button type="button" role="radio" aria-checked={!roman} className={!roman ? 'on' : ''} onClick={() => chooseLatin(false)}>
+              ગુજરાતી
+            </button>
+            <button type="button" role="radio" aria-checked={roman} className={roman ? 'on' : ''} onClick={() => chooseLatin(true)}>
+              Transliteration
+            </button>
+          </div>
+        )}
       </article>
       <div className="rise-in">
         <QuoteFields store={store} quote={quote} />
