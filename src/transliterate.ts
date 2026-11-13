@@ -1,20 +1,23 @@
 /**
- * Gujarati → the everyday roman spelling people text in: "વૈષ્ણવ જન" → "vaishnav jan".
- * Rule-based and on-device. The hard part is the vowel Gujarati writes but doesn't say:
- * each consonant carries an "a" that is usually silent at the end of a word and between
- * certain consonants, so ભગવાન is "bhagvaan", not "bhagavaana".
+ * Gujarati → roman letters, by the BAPS transliteration scheme: long vowels are marked
+ * (ā, ī, ū), retroflex consonants are dotted (ṭ, ḍ, ṇ, ṣh, ḷ), and ઝ is "z":
+ * "અનિર્દેશ ગુજરાતી" → "anirdesh gujarātī". Rule-based and on-device.
+ *
+ * Each consonant carries an "a". The scheme writes it everywhere except at the end of a
+ * word, where it's silent (દેશ desh) unless the word ends in a cluster that keeps it
+ * (મંત્ર mantra, સત્ય satya).
  */
 
-const VOWELS: Record<string, string> = { અ: 'a', આ: 'aa', ઇ: 'i', ઈ: 'ee', ઉ: 'u', ઊ: 'oo', ઋ: 'ru', એ: 'e', ઍ: 'e', ઐ: 'ai', ઓ: 'o', ઑ: 'o', ઔ: 'au' }
-const SIGNS: Record<string, string> = { 'ા': 'aa', 'િ': 'i', 'ી': 'ee', 'ુ': 'u', 'ૂ': 'oo', 'ૃ': 'ru', 'ે': 'e', 'ૅ': 'e', 'ૈ': 'ai', 'ો': 'o', 'ૉ': 'o', 'ૌ': 'au' }
+const VOWELS: Record<string, string> = { અ: 'a', આ: 'ā', ઇ: 'i', ઈ: 'ī', ઉ: 'u', ઊ: 'ū', ઋ: 'ṛu', ૠ: 'ṛu', એ: 'e', ઍ: 'ĕ', ઐ: 'ai', ઓ: 'o', ઑ: 'ŏ', ઔ: 'au' }
+const SIGNS: Record<string, string> = { 'ા': 'ā', 'િ': 'i', 'ી': 'ī', 'ુ': 'u', 'ૂ': 'ū', 'ૃ': 'ṛu', 'ૄ': 'ṛu', 'ે': 'e', 'ૅ': 'ĕ', 'ૈ': 'ai', 'ો': 'o', 'ૉ': 'ŏ', 'ૌ': 'au' }
 const CONSONANTS: Record<string, string> = {
-  ક: 'k', ખ: 'kh', ગ: 'g', ઘ: 'gh', ઙ: 'ng',
-  ચ: 'ch', છ: 'chh', જ: 'j', ઝ: 'jh', ઞ: 'ny',
-  ટ: 't', ઠ: 'th', ડ: 'd', ઢ: 'dh', ણ: 'n',
+  ક: 'k', ખ: 'kh', ગ: 'g', ઘ: 'gh', ઙ: 'ṅ',
+  ચ: 'ch', છ: 'chh', જ: 'j', ઝ: 'z', ઞ: 'ny',
+  ટ: 'ṭ', ઠ: 'ṭh', ડ: 'ḍ', ઢ: 'ḍh', ણ: 'ṇ',
   ત: 't', થ: 'th', દ: 'd', ધ: 'dh', ન: 'n',
   પ: 'p', ફ: 'f', બ: 'b', ભ: 'bh', મ: 'm',
-  ય: 'y', ર: 'r', લ: 'l', ળ: 'l', વ: 'v',
-  શ: 'sh', ષ: 'sh', સ: 's', હ: 'h',
+  ય: 'y', ર: 'r', લ: 'l', ળ: 'ḷ', વ: 'v',
+  શ: 'sh', ષ: 'ṣh', સ: 's', હ: 'h',
 }
 const VIRAMA = '્'
 const NUKTA = '઼'
@@ -61,48 +64,33 @@ function parse(word: string): Syllable[] {
   return out
 }
 
-/** Silence the "a"s Gujarati doesn't pronounce. Right to left, like the language's own rhythm. */
-function dropSilentVowels(s: Syllable[]) {
+/** Silence a word's final "a", except in one-letter words (ન, જ) and Sanskrit endings: મંત્ર, સત્ય, વિશ્વ, કૃષ્ણ. */
+function dropFinalA(s: Syllable[]) {
   const end = s.length - 1
-  const isBareA = (x: Syllable) => x.vowel === 'a' && !x.independent && !x.coda
-
-  // A final "a" goes, except one-letter words (ન, જ) and Sanskrit endings: મંત્ર, સત્ય, વિશ્વ, કૃષ્ણ.
   const last = s[end]
-  const heldByCluster = last.cons.length > 1 && /^(y|r|v|n)$/.test(last.cons[last.cons.length - 1])
-  if (end > 0 && isBareA(last) && !heldByCluster) last.vowel = ''
-
-  // Between vowels, a lone "a" goes: ઉપકાર upkaar. Never twice in a row, never in the first syllable.
-  for (let i = end - 1; i >= 1; i--) {
-    const next = s[i + 1]
-    if (isBareA(s[i]) && s[i].cons.length === 1 && next.cons.length === 1 && next.vowel) s[i].vowel = ''
-  }
+  const bare = last.vowel === 'a' && !last.independent && !last.coda
+  const heldByCluster = last.cons.length > 1 && /^(y|r|v|n|ṇ)$/.test(last.cons[last.cons.length - 1])
+  if (end > 0 && bare && !heldByCluster) last.vowel = ''
 }
 
 function cluster(cons: string[]): string {
   return cons
     .join('')
-    .replace('jny', 'gn') // જ્ઞ
-    .replace('chchh', 'chh') // ચ્છ
-    .replace(/([kgtdbc])h\1h/, '$1$1h') // પથ્થર patthar, બચ્ચા baccha
+    .replace('jny', 'gn') // જ્ઞ: gnān
+    .replace(/([kgtdbcpṭḍ])h\1h/, '$1$1h') // પથ્થર patthar, ઉચ્છ્વાસ
 }
 
 function romanize(word: string): string {
   const s = parse(word)
   if (!s.length) return word
-  dropSilentVowels(s)
+  dropFinalA(s)
   return s
     .map((x, i) => {
-      const next = s[i + 1]
-      const final = !next
-      const following = next?.cons[0] ?? ''
-      let vowel = x.vowel
+      const following = s[i + 1]?.cons[0] ?? ''
       let coda: string = x.coda
-      if (vowel === 'ee' && (final || !following)) vowel = 'i' // મારી maari, કહીએ kahie
-      if (vowel === 'aa' && final && !coda && s.length > 1) vowel = 'a' // ગયા gaya
-      if (coda === 'n' && final && vowel === 'u') coda = '' // કરવું karvu: barely voiced
       if (coda === 'n' && /^[pbm]/.test(following)) coda = 'm' // સંબંધ sambandh
       if (coda === 'h' && /^(kh|s)/.test(following)) coda = '' // દુઃખ dukh
-      return cluster(x.cons) + vowel + coda
+      return cluster(x.cons) + x.vowel + coda
     })
     .join('')
 }
