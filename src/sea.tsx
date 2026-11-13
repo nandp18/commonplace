@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { QuoteText } from './components'
+import { dropPath } from './dropShape'
 import { arrivedByCeremony } from './drop'
 import { haptic, markTransition, morphName, reducedMotion } from './motion'
 import type { Book, Quote } from './types'
@@ -240,8 +241,7 @@ export function DotSea({
         } else {
           // A clear ring of water around each drop so it reads apart from the sea.
           ctx.fillStyle = '#fff'
-          ctx.beginPath()
-          ctx.arc(x, yy, 4, 0, Math.PI * 2)
+          dropPath(ctx, x, yy, 4, 2.1)
           ctx.fill()
         }
         const g = glow.current
@@ -258,8 +258,7 @@ export function DotSea({
           }
         }
         ctx.fillStyle = `rgba(${color}, ${isSel || isToday ? 1 : 0.85})`
-        ctx.beginPath()
-        ctx.arc(x, yy, isSel ? 3.2 : 2.4, 0, Math.PI * 2)
+        dropPath(ctx, x, yy, isSel ? 3.2 : 2.4)
         ctx.fill()
       }
     }

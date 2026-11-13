@@ -12,9 +12,10 @@ void main() { gl_Position = vec4(p, 0.0, 1.0); }
 const FRAG = `
 precision highp float;
 uniform vec2 uRes;
-uniform float uTime, uCell, uLook, uNight, uPitch, uHeight, uDrift;
+uniform float uTime, uCell, uLook, uNight, uPitch, uHeight, uDrift, uInk;
 uniform vec4 uRipples[8]; // world x, world z, start time, strength
 uniform vec3 uSun; // toward the sun or moon
+uniform vec3 uBg, uDot, uGlint; // paper, dots, and dots where light glints
 
 float waves(vec2 p, float t) {
   float h = 0.0;
@@ -105,9 +106,7 @@ float bayer4(vec2 p) {
 }
 
 void main() {
-  vec3 paper = vec3(0.957, 0.945, 0.910), ink = vec3(0.118, 0.137, 0.114);
-  vec3 night = vec3(0.035, 0.047, 0.067), cream = vec3(0.96, 0.89, 0.75), gold = vec3(0.91, 0.76, 0.48);
-  vec3 bg = mix(paper, night, uNight);
+  vec3 bg = uBg;
   vec2 f = gl_FragCoord.xy;
   vec3 col;
   if (uLook < 0.5) {
@@ -119,20 +118,18 @@ void main() {
     vec2 s = scene(center);
     float L = clamp(s.x, 0.0, 1.0);
     // By day, ink dots print the shadows; by night, pale dots print the light.
-    float amount = max(0.0, (mix(1.0 - L, L, uNight) - 0.03) / 0.97);
+    float amount = min(1.0, max(0.0, (mix(1.0 - L, L, uNight) - 0.03) / 0.97) * uInk);
     float rad = 0.45 * c * sqrt(amount);
     float a = smoothstep(rad + 0.8, rad - 0.8, distance(f, center));
-    vec3 dot = mix(ink, mix(cream, gold, s.y), uNight);
-    col = mix(bg, dot, a);
+    col = mix(bg, mix(uDot, uGlint, s.y), a);
   } else {
     // 1-bit ordered dither on chunky pixels.
     float k = max(2.0, floor(uCell / 3.0));
     vec2 cell = floor(f / k);
     vec2 s = scene((cell + 0.5) * k);
     float L = clamp(s.x, 0.0, 1.0);
-    float on = step(bayer4(cell), mix(1.0 - L, L, uNight));
-    vec3 dot = mix(ink, mix(cream, gold, s.y), uNight);
-    col = mix(bg, dot, on);
+    float on = step(bayer4(cell), mix(1.0 - L, L, uNight) * uInk);
+    col = mix(bg, mix(uDot, uGlint, s.y), on);
   }
   gl_FragColor = vec4(col, 1.0);
 }
@@ -145,7 +142,15 @@ export interface SeaFrame {
   look?: 'dots' | 'dither'
   drift?: number // how far the camera has drifted along the shore
   sun?: [number, number, number] // direction of the sun or moon; default: low, straight ahead
+  ink?: number // weight of the dots (default 1); lower prints a lighter sea, higher brings up a dim one
+  /** Colors, 0..1 RGB. By default: ink on paper by day, cream and gold on the dark by night. */
+  palette?: { bg: RGB; dot: RGB; glint: RGB }
 }
+
+type RGB = [number, number, number]
+const PAPER: RGB = [0.957, 0.945, 0.91], INK: RGB = [0.118, 0.137, 0.114]
+const NIGHT: RGB = [0.035, 0.047, 0.067], CREAM: RGB = [0.96, 0.89, 0.75], GOLD: RGB = [0.91, 0.76, 0.48]
+const mixRGB = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 
 /** Camera height above the water, and the field of view the shader uses. */
 const HEIGHT = 2.2
@@ -178,7 +183,8 @@ export function createSea(canvas: HTMLCanvasElement, cellCss = 9) {
   const u = (name: string) => gl.getUniformLocation(prog, name)
   const U = {
     res: u('uRes'), time: u('uTime'), cell: u('uCell'), look: u('uLook'), night: u('uNight'),
-    pitch: u('uPitch'), height: u('uHeight'), drift: u('uDrift'), ripples: u('uRipples'), sun: u('uSun'),
+    pitch: u('uPitch'), height: u('uHeight'), drift: u('uDrift'), ripples: u('uRipples'), sun: u('uSun'), ink: u('uInk'),
+    bg: u('uBg'), dot: u('uDot'), glint: u('uGlint'),
   }
   const dpr = Math.min(2, devicePixelRatio || 1)
   const ripples = new Float32Array(32)
@@ -206,8 +212,14 @@ export function createSea(canvas: HTMLCanvasElement, cellCss = 9) {
       gl.uniform1f(U.pitch, f.pitch)
       gl.uniform1f(U.height, HEIGHT)
       gl.uniform1f(U.drift, f.drift ?? 0)
+      gl.uniform1f(U.ink, f.ink ?? 1)
       gl.uniform4fv(U.ripples, ripples)
       gl.uniform3fv(U.sun, f.sun ?? [0, 0.11, 0.99])
+      const n = f.night ?? 1
+      const pal = f.palette ?? { bg: mixRGB(PAPER, NIGHT, n), dot: mixRGB(INK, CREAM, n), glint: mixRGB(INK, GOLD, n) }
+      gl.uniform3fv(U.bg, pal.bg)
+      gl.uniform3fv(U.dot, pal.dot)
+      gl.uniform3fv(U.glint, pal.glint)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
     },
     /** Send a ripple out from where a screen point (CSS px in the viewport) meets the sea. */

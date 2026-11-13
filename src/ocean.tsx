@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { GlassButton, QuoteText } from './components'
+import { GlassButton, QuoteText, Row, Sheet } from './components'
+import { Icon } from './icons'
+import { dropPath } from './dropShape'
+import { createSea, pitchForHorizon, type Sea } from './glsea'
+import { buildReef, deepGemsBetween, drawPiece, drawTreasure, drawTurtle, FISH } from './sealife'
 import { haptic, markTransition, reducedMotion } from './motion'
+import { copySky, easeSky, loadSkyChoice, saveSkyChoice, SKIES, SKY_TIMES, skyLabel, skyTimeAt, type SkyChoice } from './skytime'
 import type { Store } from './store'
 import { loadSeen, markSeen, pickTide, whenLabel } from './tide'
 import type { Quote } from './types'
@@ -13,13 +18,23 @@ import { quoteOfTheDay } from './util'
  * Scrolling is a small physics system: a soft detent at each quote while you drag, then a
  * spring that settles the nearest quote (or the one your flick was heading for) into place.
  *
- * Above the water hangs tonight's moon. Below: caustics and a moon path in the shallows,
- * bubbles, schools of fish, the occasional whale, and jellyfish glowing in the dark.
+ * Above the water hangs tonight's moon. At the surface the sea is the WebGL one the filing
+ * ceremony falls into, printed in ink dots; as you dive the camera tips down into it and it
+ * gives way to the water below: caustics and a moon path in the shallows, bubbles, schools
+ * of fish, the occasional whale, and jellyfish glowing in the dark.
  */
 
 const GAP = 14
 const SURFACE = 250 // world y of the waterline
-const FIRST = SURFACE + 200 // world y of the first quote
+/** Open water between the surface and the first quote: room to tip the camera down and go under. */
+const DESCENT = 380
+const FIRST = SURFACE + 200 + DESCENT // world y of the first quote
+/**
+ * Going under: over this stretch of the dive the WebGL surface fades out, and then the water
+ * below fades in. They barely overlap: two dot lattices at once make a moiré.
+ */
+const UNDER = [SURFACE + 20, SURFACE + 170]
+const BELOW = [SURFACE + 140, SURFACE + 280]
 const SPACING = 320 // between quotes
 const METERS = 0.4 // world px → meters
 const FOCUS = 0.44 // where a settled quote sits, as a fraction of screen height
@@ -112,14 +127,15 @@ function shuffled<T>(items: T[], seed: number): T[] {
 
 interface Ripple { x: number; y: number; t0: number } // y in world px
 interface Bubble { x: number; y: number; r: number; vy: number; ph: number }
-interface School { x: number; y: number; dir: number; fish: { ox: number; oy: number; ph: number }[] }
+interface School { x: number; y: number; dir: number; color: number[]; speed: number; fish: { ox: number; oy: number; ph: number }[] }
 interface Whale { x: number; y: number; dir: number }
 interface Jelly { x: number; y: number; ph: number; size: number }
 
 export function Ocean({ store }: { store: Store }) {
   const root = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
-  const dropTarget = useRef<HTMLDivElement>(null)
+  const glCanvas = useRef<HTMLCanvasElement>(null)
+  const sea = useRef<Sea | null>(null)
   const depthLabel = useRef<HTMLSpanElement>(null)
   const items = useRef(new Map<number, HTMLElement>())
   const heights = useRef(new Map<number, number>())
@@ -187,7 +203,7 @@ export function Ocean({ store }: { store: Store }) {
     x: savedDepth,
     v: 0, // px/s
     mode: 'idle' as 'idle' | 'drag' | 'spring' | 'wheel' | 'ascend' | 'tide',
-    ascent: { from: 0, start: 0, dur: 1 },
+    ascent: { from: 0, to: 0, start: 0, dur: 1 },
     racing: false, // too fast to read: skip mounting the quotes rushing past
     target: savedDepth,
     targetK: -1,
@@ -200,15 +216,47 @@ export function Ocean({ store }: { store: Store }) {
   const bubbles = useRef<Bubble[]>([])
   /** Tapping the moon fills it for a while. */
   const moonBoost = useRef(0)
-  const moonAt = (w: number, top: number) => ({ x: w * 0.74, y: SURFACE * 0.4 - top * 0.6, r: 30 })
+  /** Where the pearls are on screen this frame: tapping one rides the tide. */
+  const pearlSpots = useRef<{ x: number; y: number }[]>([])
+
+  // The sky: the local time of day, or the one you've chosen. The loop eases toward it.
+  const [skyChoice, setSkyChoice] = useState<SkyChoice>(loadSkyChoice)
+  const [clock, setClock] = useState(() => skyTimeAt())
+  const skyTime = skyChoice === 'auto' ? clock : skyChoice
+  const skyTarget = useRef(SKIES[skyTime])
+  skyTarget.current = SKIES[skyTime]
+  const skyNow = useRef(copySky(SKIES[skyTime]))
+  const [choosingSky, setChoosingSky] = useState(false)
+  useEffect(() => {
+    const id = setInterval(() => setClock(skyTimeAt()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const chooseSky = (c: SkyChoice) => {
+    setSkyChoice(c)
+    saveSkyChoice(c)
+    setChoosingSky(false) // and watch the sky turn
+    haptic('tick')
+  }
+
+  /** The sun or moon: where the sky puts it, rising out of view as you dive. */
+  const moonAt = (w: number, top: number) => ({ x: w * skyNow.current.at[0], y: SURFACE - skyNow.current.at[1] - top * 0.6, r: 30 })
 
   /** Rise all the way back to the surface: eased, with the time scaled to the depth. */
   const surface = () => {
     const p = phys.current
     if (p.x < 4) return
     const dur = Math.min(1.8, Math.max(0.7, 0.7 + p.x / 6000))
-    Object.assign(p, { mode: 'ascend', ascent: { from: p.x, start: performance.now(), dur } })
+    Object.assign(p, { mode: 'ascend', ascent: { from: p.x, to: 0, start: performance.now(), dur } })
     haptic('tap')
+  }
+  /**
+   * Between the surface and the first quote, a slow glide instead of the spring: long enough
+   * to watch the camera tip down into the sea and go under (or come back up out of it).
+   */
+  const crossing = (fromK: number, toK: number) => !reducedMotion() && Math.min(fromK, toK) === -1 && Math.max(fromK, toK) === 0
+  const glide = (to: number) => {
+    const p = phys.current
+    Object.assign(p, { mode: 'ascend', target: to, targetK: to > 0 ? 0 : -1, landed: false, ascent: { from: p.x, to, start: performance.now(), dur: to > 0 ? 1.5 : 1.2 } })
   }
 
   /** Where the tide last set you down, for its line of when you highlighted it. */
@@ -257,7 +305,8 @@ export function Ocean({ store }: { store: Store }) {
     return () => window.removeEventListener('resize', on)
   }, [])
 
-  // Coming back from a quote: land exactly on it, and let it shrink into its drop.
+  // Coming back from a quote: land exactly on it. Its words glide straight back into their
+  // place (the same morph that opened it, in reverse) and its drop ripples.
   useLayoutEffect(() => {
     const r = returning
     if (!r || n === 0) return
@@ -268,18 +317,15 @@ export function Ocean({ store }: { store: Store }) {
     Object.assign(phys.current, { x: y, raw: y, target: y, targetK: r.k, v: 0, mode: 'idle', landed: true })
     items.current.forEach(placeItem)
     placeSky(root.current?.querySelector('.ocean-sky') ?? null)
-    // The view transition morphs the quote into this dot.
-    const dot = dropTarget.current
-    if (dot) {
-      dot.style.transform = `translate3d(${dropX(r.k, w) - 5}px, ${worldY(r.k) - y - 5}px, 0)`
-      dot.style.display = 'block'
-      setTimeout(() => (dot.style.display = 'none'), 900)
+    const words = el?.querySelector<HTMLElement>('.quote-text')
+    if (words) {
+      words.style.setProperty('view-transition-name', 'morph-quote')
+      setTimeout(() => words.style.removeProperty('view-transition-name'), 900) // names must stay unique
     }
-    el?.classList.add('emerging')
     setTimeout(() => {
       ripples.current.push({ x: dropX(r.k, w), y: worldY(r.k), t0: performance.now() })
       burst(dropX(r.k, w), worldY(r.k), 5)
-    }, 380)
+    }, 420)
     returning = null
   }, [])
 
@@ -299,6 +345,7 @@ export function Ocean({ store }: { store: Store }) {
         const k = Math.max(-1, here.k + Math.sign(v))
         s = k < 0 ? { k: -1, y: 0 } : { k, y: snapPoint(k, h) }
       }
+      if (crossing(here.k, s.k)) return glide(Math.max(0, s.y))
       Object.assign(p, { mode: 'spring', target: Math.max(0, s.y), targetK: s.k, landed: false })
     }
     const down = (e: PointerEvent) => {
@@ -328,14 +375,17 @@ export function Ocean({ store }: { store: Store }) {
       if (p.mode !== 'drag') return
       const tapped = p.moved <= 6
       el.dataset.dragged = tapped ? '' : '1'
-      if (tapped && !(e.target as HTMLElement).closest('.ocean-quote, .ocean-bar, .ocean-tide')) {
+      if (tapped && !(e.target as HTMLElement).closest('.ocean-quote, .ocean-bar, .ocean-tide, .ocean-time')) {
         const moon = moonAt(window.innerWidth, p.x)
-        if (Math.hypot(e.clientX - moon.x, e.clientY - moon.y) < moon.r + 14) {
+        if (pearlSpots.current.some((s) => Math.hypot(e.clientX - s.x, e.clientY - s.y) < 22)) {
+          ride() // a pearl: the tide carries you to a quote you haven't seen in a while
+        } else if (skyNow.current.sun < 0.5 && skyNow.current.disc > 0.5 && Math.hypot(e.clientX - moon.x, e.clientY - moon.y) < moon.r + 14) {
           moonBoost.current = 1 // a full moon, for a while
           haptic('success')
         } else if (e.clientY + p.x > SURFACE) {
           ripples.current.push({ x: e.clientX, y: e.clientY + p.x, t0: performance.now() })
           burst(e.clientX, e.clientY + p.x, 9)
+          if (glCanvas.current?.style.visibility !== 'hidden') sea.current?.ripple(e.clientX, e.clientY)
           haptic('tick')
         }
       }
@@ -360,7 +410,9 @@ export function Ocean({ store }: { store: Store }) {
       if (e.key === 'Home') return surface()
       if (!['ArrowDown', 'ArrowUp', ' '].includes(e.key)) return
       e.preventDefault()
-      const k = Math.max(-1, nearestSnap(p.target, h).k + (e.key === 'ArrowUp' ? -1 : 1))
+      const from = nearestSnap(p.target, h).k
+      const k = Math.max(-1, from + (e.key === 'ArrowUp' ? -1 : 1))
+      if (crossing(from, k)) return glide(k < 0 ? 0 : snapPoint(k, h))
       Object.assign(p, { mode: 'spring', target: k < 0 ? 0 : snapPoint(k, h), targetK: k, landed: false })
     }
     el.addEventListener('pointerdown', down)
@@ -392,6 +444,11 @@ export function Ocean({ store }: { store: Store }) {
     c.width = w * dpr
     c.height = h * dpr
     const ctx = c.getContext('2d')!
+    const glc = glCanvas.current
+    // The WebGL sea is only made when the surface comes into view: compiling its shader
+    // stalls the first frame, which would hitch the transition back from a quote deep down.
+    // The context is kept across remounts (StrictMode reuses the canvas).
+    let glFailed = !glc
     const still = reducedMotion()
     const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
     let raf = 0
@@ -400,7 +457,10 @@ export function Ocean({ store }: { store: Store }) {
     let shownTone = ''
     let focusK = -2
     let lastTideTick = 0
-    let school: School | null = null
+    const schools: School[] = []
+    let turtle: { x: number; y: number; dir: number } | null = null
+    // The reef grows along the edges of the sunlit water, from just under the surface.
+    const reef = buildReef(w, SURFACE + 300, yAtMeters(320))
     let whale: Whale | null = null
     const jellies: Jelly[] = []
     const snow = Array.from({ length: 80 }, (_, i) => ({ x: (hash(`s${i}`) % 1000) / 1000, y: (hash(`t${i}`) % 1000) / 1000, r: 0.5 + (i % 3) * 0.35 }))
@@ -431,15 +491,15 @@ export function Ocean({ store }: { store: Store }) {
           }
         }
       } else if (p.mode === 'ascend') {
-        const { from, start, dur } = p.ascent
+        const { from, to, start, dur } = p.ascent
         const u = Math.min(1, (now - start) / 1000 / dur)
         const eased = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2 // ease in-out
-        const x = from * (1 - eased)
+        const x = from + (to - from) * eased
         p.v = (x - p.x) / Math.max(dt, 0.001) // for streaks and bubbles
         p.x = x
         if (u >= 1) {
-          Object.assign(p, { x: 0, v: 0, mode: 'idle', target: 0, landed: true })
-          haptic('success')
+          Object.assign(p, { x: to, v: 0, mode: 'idle', target: to, landed: true })
+          haptic(to === 0 ? 'success' : 'tap')
         }
       } else if (p.mode === 'tide') {
         const { from, start, dur } = p.ascent
@@ -471,24 +531,35 @@ export function Ocean({ store }: { store: Store }) {
       const focusWorld = top + h * FOCUS
       const m = Math.max(0, (focusWorld - SURFACE) * METERS)
 
+      // ── The time of day ──
+      const sky = skyNow.current
+      easeSky(sky, skyTarget.current, still ? 1 : 1 - Math.exp(-dt * 2.5))
+      const skyDark = sky.dark
+
       // ── Light and colour, by zone ──
       const twilight = smooth(SURFACE + 60, gapMid(gapNear(yAtMeters(200))) + 120, focusWorld)
       const midGap = gapMid(gapNear(yAtMeters(1000)))
-      const night = smooth(midGap - 110, midGap + 110, focusWorld) // the plunge, inside one gap
+      const plunge = smooth(midGap - 110, midGap + 110, focusWorld) // the plunge, inside one gap
       const abyssGap = gapMid(gapNear(yAtMeters(4000)))
       const abyss = smooth(abyssGap - 110, abyssGap + 110, focusWorld)
-      const bg = mix(mix3(BG.sun, BG.twi, BG.mid, twilight, night), BG.abyss, abyss)
-      const ink = mix3(INK.sun, INK.twi, INK.mid, twilight, night)
+      // By day the shallows are pale and darken as you go down; under a dark sky they're dark
+      // from the start.
+      const bg = mix(mix(mix3(sky.water, BG.twi, BG.mid, twilight, plunge), mix(sky.water, BG.mid, twilight), skyDark), BG.abyss, abyss)
+      const ink = mix(mix3(sky.ink, INK.twi, INK.mid, twilight, plunge), mix(sky.ink, INK.mid, twilight), skyDark)
+      const night = Math.max(plunge, skyDark) // how dark it is here
       const daylight = (1 - night) * twilight // how much moonlight reaches here
       const dark = night
-      const tone = `${bg}`
+      // What's behind the header: the sky, until you're under.
+      const topColor = SURFACE - top > 76 ? sky.sky.map(Math.round) : bg
+      const tone = `${bg}|${topColor}|${sky.muted.map(Math.round)}`
       if (tone !== shownTone) {
         shownTone = tone
-        el.style.setProperty('--o-bg', `rgb(${bg})`)
+        el.style.setProperty('--o-bg', `rgb(${topColor})`)
+        el.style.setProperty('--o-water', `rgb(${bg})`)
         el.style.setProperty('--o-text', `rgb(${mix(TEXT.dark, TEXT.light, smooth(0.4, 0.6, night))})`)
-        el.style.setProperty('--o-muted', `rgb(${mix3(MUTED.sun, MUTED.twi, MUTED.mid, twilight, night)})`)
+        el.style.setProperty('--o-muted', `rgb(${mix(mix3(sky.muted, MUTED.twi, MUTED.mid, twilight, plunge), mix(sky.muted, MUTED.mid, twilight), skyDark)})`)
         el.dataset.dark = night > 0.5 ? '1' : ''
-        meta?.setAttribute('content', `rgb(${bg})`)
+        meta?.setAttribute('content', `rgb(${topColor})`)
       }
 
       // ── The moon ──
@@ -498,11 +569,75 @@ export function Ocean({ store }: { store: Store }) {
       const lit = Math.max(illumination(shown), 0.04)
       const moon = moonAt(w, top)
 
+      // ── The surface, in WebGL ──
+      // The horizon rides on the waterline, so diving tips the camera down into the sea; it
+      // fades out as you go under, and stops drawing once you're below it.
+      let above = glFailed ? 0 : 1 - smooth(UNDER[0], UNDER[1], top)
+      if (above > 0 && !sea.current && glc) {
+        sea.current = createSea(glc, 10)
+        if (!sea.current) (glFailed = true), (above = 0)
+      }
+      if (glc) {
+        glc.style.visibility = above > 0 ? '' : 'hidden'
+        glc.style.opacity = String(above)
+        const horizon = SURFACE - top
+        glc.style.clipPath = `inset(${Math.max(0, horizon)}px 0 0 0)` // the sky stays the page's own
+        if (above > 0 && sea.current) {
+          const pitch = Math.max(-0.75, Math.min(0.3, pitchForHorizon(horizon, h)))
+          // Aim the light at the moon, so its glitter path lies right beneath it.
+          const ux = (moon.x - w / 2) / h, uy = (h / 2 - moon.y) / h
+          const cp = Math.cos(pitch), sp = Math.sin(pitch)
+          const sun: [number, number, number] = [ux * 1.1, sp + uy * 1.1 * cp, cp - uy * 1.1 * sp]
+          const c = (v: number[]) => v.map((x) => x / 255) as [number, number, number]
+          // Ink-on-paper or light-on-dark flips at the midpoint of a change (half of each prints a flat grey).
+          sea.current.render({ time: t, pitch, night: skyDark < 0.5 ? 0 : 1, drift: t * 0.35, sun, ink: sky.weight, palette: { bg: c(sky.water), dot: c(sky.ink), glint: c(sky.glint) } })
+        }
+      }
+      const below = glFailed ? 1 : smooth(BELOW[0], BELOW[1], top) // how much of the canvas water shows
+
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.fillStyle = `rgb(${bg})`
       ctx.fillRect(0, 0, w, h)
 
-      if (moon.y > -moon.r * 3) {
+      // ── The sky ──
+      const skyline = SURFACE - top
+      if (skyline > -20) {
+        const g = ctx.createLinearGradient(0, -top, 0, skyline)
+        g.addColorStop(0, `rgb(${sky.sky})`)
+        g.addColorStop(1, `rgb(${sky.horizon})`)
+        ctx.fillStyle = g
+        ctx.fillRect(0, 0, w, skyline + 12)
+        if (sky.stars > 0.02) {
+          for (let i = 0; i < 70; i++) {
+            const sx = (hash(`x${i}`) % 1000) / 1000 * w
+            const sy = (hash(`y${i}`) % 1000) / 1000 * (SURFACE - 30) - top * 0.6
+            if (sy > skyline - 14) continue
+            const tw = 0.45 + 0.55 * Math.sin(t * (0.6 + (i % 5) * 0.3) + i)
+            ctx.fillStyle = `rgba(${sky.ink}, ${sky.stars * (0.25 + 0.5 * tw) * (1 - sy / skyline) ** 0.5})`
+            dot(sx, sy, i % 7 === 0 ? 1.3 : 0.8)
+          }
+        }
+      }
+
+      // ── The sun ──
+      if (sky.sun > 0.02 && sky.disc > 0.02 && moon.y > -moon.r * 3) {
+        const a = sky.sun * sky.disc
+        const halo = ctx.createRadialGradient(moon.x, moon.y, moon.r * 0.5, moon.x, moon.y, moon.r * 3.2)
+        halo.addColorStop(0, `rgba(${sky.glint}, ${0.3 * a})`)
+        halo.addColorStop(1, `rgba(${sky.glint}, 0)`)
+        ctx.fillStyle = halo
+        dot(moon.x, moon.y, moon.r * 3.2)
+        ctx.fillStyle = `rgba(${sky.glint}, ${0.9 * a})`
+        const r = moon.r * 0.85
+        for (let dy = -r; dy <= r; dy += 4.2) {
+          const half = Math.sqrt(Math.max(0, r * r - dy * dy))
+          for (let dx = -half; dx <= half; dx += 4.2) dot(moon.x + dx, moon.y + dy, 1.55)
+        }
+      }
+
+      // ── The moon ──
+      if (sky.sun < 0.98 && sky.disc > 0.02 && moon.y > -moon.r * 3) {
+        ctx.globalAlpha = (1 - sky.sun) * sky.disc
         const halo = ctx.createRadialGradient(moon.x, moon.y, moon.r * 0.6, moon.x, moon.y, moon.r * 2.6)
         halo.addColorStop(0, `rgba(${MOONLIT}, ${0.16 * lit})`)
         halo.addColorStop(1, `rgba(${MOONLIT}, 0)`)
@@ -521,6 +656,7 @@ export function Ocean({ store }: { store: Store }) {
             dot(moon.x + dx, moon.y + dy + Math.sin(t * 0.3) * 1.2, isLit ? 1.45 : 1.1)
           }
         }
+        ctx.globalAlpha = 1
       }
 
       // ── Moonbeams slanting down into the twilight ──
@@ -590,7 +726,7 @@ export function Ocean({ store }: { store: Store }) {
 
       // ── The water ──
       const rowGap = GAP * 0.86
-      const streak = Math.min(9, speed * 0.004) // dots stretch at speed
+      const streak = Math.min(9, speed * 0.004) * below // dots stretch at speed
       const r0 = Math.max(0, Math.floor((top - SURFACE) / rowGap) - 1)
       const r1 = Math.ceil((top + h - SURFACE) / rowGap) + 1
       for (let r = r0; r <= r1; r++) {
@@ -639,7 +775,7 @@ export function Ocean({ store }: { store: Store }) {
               color = GLOW
             }
           }
-          ctx.fillStyle = `rgba(${color}, ${Math.max(0.03, a)})`
+          ctx.fillStyle = `rgba(${color}, ${Math.max(0.03, a) * below})`
           ctx.beginPath()
           if (streak > 0.5) ctx.ellipse(x, wy - top, radius, radius + streak, 0, 0, Math.PI * 2)
           else ctx.arc(x, wy - top, radius, 0, Math.PI * 2)
@@ -657,6 +793,40 @@ export function Ocean({ store }: { store: Store }) {
           ctx.ellipse(s.x * w + Math.sin(t * 0.4 + s.y * 9) * 6, yy, s.r, s.r + streak * 0.6, 0, 0, Math.PI * 2)
           ctx.fill()
         }
+      }
+
+      // ── The reef, and what's hidden in it ──
+      const reefA = below * (1 - plunge * 0.8) * (1 - skyDark * 0.45)
+      const spots: { x: number; y: number }[] = []
+      if (reefA > 0.02) {
+        for (const pc of reef.pieces) {
+          const sy = pc.y - top
+          if (sy + pc.bottom < -20 || sy + pc.top > h + 20) continue
+          drawPiece(ctx, dot, pc, sy, t, reefA)
+        }
+        for (const g of reef.treasure) {
+          const sy = g.y - top
+          if (sy < -30 || sy > h + 30) continue
+          drawTreasure(ctx, dot, g, sy, t, reefA, skyDark * 0.6)
+          if (g.kind === 'pearl') spots.push({ x: g.x, y: sy })
+        }
+      }
+      pearlSpots.current = spots
+      // Gems lost in the deep, glowing.
+      if (plunge > 0.05)
+        for (const g of deepGemsBetween(w, top - 30, top + h + 30, yAtMeters(700))) drawTreasure(ctx, dot, g, g.y - top, t, plunge, plunge)
+
+      // ── A sea turtle, now and then, gliding through the sunlit water ──
+      if (!turtle && !still && plunge < 0.2 && below > 0.6 && Math.random() < dt / 16) {
+        const dir = Math.random() < 0.5 ? -1 : 1
+        turtle = { x: dir > 0 ? -60 : w + 60, y: Math.max(SURFACE + 220, top + h * (0.2 + Math.random() * 0.5)), dir }
+      }
+      if (turtle) {
+        turtle.x += turtle.dir * 17 * dt
+        turtle.y += Math.sin(t * 0.5) * 3 * dt
+        const sy = turtle.y - top
+        if (turtle.x < -90 || turtle.x > w + 90 || sy < -80 || sy > h + 80) turtle = null
+        else drawTurtle(ctx, dot, turtle.x, sy, turtle.dir, t, 0.85 * below * (1 - plunge))
       }
 
       // ── Bubbles: a few always rising; more when you dive fast; a burst where you tap ──
@@ -685,40 +855,52 @@ export function Ocean({ store }: { store: Store }) {
         dot(b.x - b.r * 0.35, sy - b.r * 0.35, 0.5)
       }
 
-      // ── A school of fish crossing the lit water ──
-      if (!school && night < 0.3 && top + h > SURFACE + 120 && Math.random() < dt / 9) {
+      // ── Schools of fish: bright colours in the lit water, lanternfish in the dark ──
+      if (schools.length < 2 && !still && top + h > SURFACE + 160 && Math.random() < dt / 6) {
         const dir = Math.random() < 0.5 ? -1 : 1
-        school = {
+        const deepFish = plunge > 0.5
+        schools.push({
           x: dir > 0 ? -90 : w + 90,
-          y: Math.max(SURFACE + 60, top + h * (0.2 + Math.random() * 0.6)),
+          y: Math.max(SURFACE + 160, top + h * (0.15 + Math.random() * 0.7)),
           dir,
-          fish: Array.from({ length: 9 + Math.floor(Math.random() * 6) }, () => ({ ox: (Math.random() - 0.5) * 80, oy: (Math.random() - 0.5) * 40, ph: Math.random() * 6 })),
-        }
+          color: deepFish ? GLOW : FISH[Math.floor(Math.random() * FISH.length)],
+          speed: deepFish ? 26 : 40 + Math.random() * 20,
+          fish: Array.from({ length: (deepFish ? 6 : 8) + Math.floor(Math.random() * 6) }, () => ({ ox: (Math.random() - 0.5) * 80, oy: (Math.random() - 0.5) * 40, ph: Math.random() * 6 })),
+        })
       }
-      if (school) {
-        school.x += school.dir * 46 * dt
+      for (let i = schools.length - 1; i >= 0; i--) {
+        const school = schools[i]
+        school.x += school.dir * school.speed * dt
         const sy = school.y - top
-        if (school.x < -160 || school.x > w + 160 || sy < -120 || sy > h + 120) school = null
-        else {
-          ctx.fillStyle = `rgba(${ink}, ${0.5 * (1 - night)})`
-          for (const f of school.fish) {
-            const fx = school.x + f.ox + Math.sin(t * 0.9 + f.ph) * 4
-            const fy = sy + f.oy + Math.sin(t * 1.3 + f.ox * 0.05) * 5
-            const wig = Math.sin(t * 10 + f.ph) * 0.9
-            const d = -school.dir
-            dot(fx, fy, 1.6)
-            dot(fx + d * 3.2, fy, 1.3)
-            dot(fx + d * 6.2, fy + wig, 1.1)
-            dot(fx + d * 8.8, fy + wig * 1.9, 1.2)
+        if (school.x < -160 || school.x > w + 160 || sy < -120 || sy > h + 120) {
+          schools.splice(i, 1)
+          continue
+        }
+        const lantern = school.color === GLOW
+        ctx.fillStyle = `rgba(${school.color}, ${(lantern ? 0.7 : 0.8) * below * (lantern ? 1 : 1 - plunge * 0.85)})`
+        for (const f of school.fish) {
+          const fx = school.x + f.ox + Math.sin(t * 0.9 + f.ph) * 4
+          const fy = sy + f.oy + Math.sin(t * 1.3 + f.ox * 0.05) * 5
+          const wig = Math.sin(t * 10 + f.ph) * 0.9
+          const d = -school.dir
+          if (lantern) {
+            dot(fx, fy, 1.1) // a lanternfish is mostly its light
+            dot(fx + d * 3, fy, 0.7)
+            continue
           }
+          dot(fx, fy, 1.9)
+          dot(fx + d * 3.2, fy, 1.7)
+          dot(fx + d * 6.2, fy + wig * 0.5, 1.3)
+          dot(fx + d * 9, fy + wig - 1.8, 1.1) // a forked tail
+          dot(fx + d * 9, fy + wig + 1.8, 1.1)
         }
       }
 
-      // ── Jellyfish, glowing in the dark ──
-      if (night > 0.5) {
-        const want = 2 + Math.round(abyss * 2)
+      // ── A jellyfish or two, glowing in the deep dark ──
+      if (plunge > 0.5) {
+        const want = 1 + Math.round(abyss)
         while (jellies.length < want)
-          jellies.push({ x: 40 + Math.random() * (w - 80), y: top + h * (0.1 + Math.random() * 1.1), ph: Math.random() * 6, size: 0.8 + Math.random() * 0.5 })
+          jellies.push({ x: 40 + Math.random() * (w - 80), y: Math.max(SURFACE + 160, top + h * (0.1 + Math.random() * 1.1)), ph: Math.random() * 6, size: 0.8 + Math.random() * 0.5 })
       }
       for (let i = jellies.length - 1; i >= 0; i--) {
         const j = jellies[i]
@@ -726,7 +908,7 @@ export function Ocean({ store }: { store: Store }) {
         j.y -= (2 + 9 * pulse) * dt
         j.x += Math.sin(t * 0.3 + j.ph) * 0.15
         const sy = j.y - top
-        if (sy < -140 || sy > h + 240 || night < 0.3) {
+        if (sy < -140 || sy > h + 240 || plunge < 0.3) {
           jellies.splice(i, 1)
           continue
         }
@@ -796,10 +978,12 @@ export function Ocean({ store }: { store: Store }) {
         dot(x, y, haloR)
         if (dark < 0.45) {
           ctx.fillStyle = `rgb(${bg})`
-          dot(x, y, 4.5)
+          dropPath(ctx, x, y, 4.5, 2.1)
+          ctx.fill()
         }
         ctx.fillStyle = `rgba(${base}, ${0.6 + 0.4 * o})`
-        dot(x, y, 2.6 + o * 0.9)
+        dropPath(ctx, x, y, 2.6 + o * 0.9)
+        ctx.fill()
 
         const item = items.current.get(k)
         if (item) {
@@ -831,10 +1015,11 @@ export function Ocean({ store }: { store: Store }) {
         list.forEach((mk, i) => {
           const y = g.start + ((g.end - g.start) * (i + 1)) / (list.length + 1)
           mk.style.transform = `translate3d(0, ${y - top - 7}px, 0)`
+          mk.style.opacity = String(below)
         })
       })
-      const sky = el.querySelector<HTMLElement>('.ocean-sky')
-      if (sky) sky.style.transform = `translate3d(0, ${-top}px, 0)`
+      const skyEl = el.querySelector<HTMLElement>('.ocean-sky')
+      if (skyEl) skyEl.style.transform = `translate3d(0, ${-top}px, 0)`
 
       el.dataset.deep = top > 400 ? '1' : ''
       const label = `${Math.round(m).toLocaleString()} m · ${zoneAt(m)}`
@@ -870,13 +1055,18 @@ export function Ocean({ store }: { store: Store }) {
   return (
     <div ref={root} className="ocean">
       <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
+      <canvas ref={glCanvas} className="ocean-surface" style={{ width: size.w, height: size.h }} />
 
       <div className="ocean-sky" ref={placeSky}>
         <h1>The ocean</h1>
         <p className="meta-mono">
-          {n} {n === 1 ? 'drop' : 'drops'} · {phaseName(phase).toLowerCase()}
+          {n} {n === 1 ? 'drop' : 'drops'}
+          {SKIES[skyTime].sun < 0.5 && ` · ${phaseName(phase).toLowerCase()}`}
         </p>
-        <p className="meta-mono sky-hint">scroll to dive · tap the moon</p>
+        <button className="ocean-time meta-mono" onClick={() => setChoosingSky(true)} aria-label="Choose the time of day">
+          {skyLabel(skyTime).toLowerCase()} · {skyChoice === 'auto' ? 'local time' : 'chosen'} <span aria-hidden>▾</span>
+        </button>
+        <p className="meta-mono sky-hint">scroll to dive{SKIES[skyTime].sun < 0.5 ? ' · tap the moon' : ''}</p>
       </div>
 
       {ZONES.map((z) => (
@@ -925,8 +1115,6 @@ export function Ocean({ store }: { store: Store }) {
         )
       })}
 
-      {/* What a quote shrinks into when you come back. */}
-      <div ref={dropTarget} className="ocean-drop" style={{ viewTransitionName: 'morph-quote', display: 'none' }} />
 
       <header className="ocean-bar">
         <GlassButton icon="close" ariaLabel="Back to library" href="#/" />
@@ -937,6 +1125,21 @@ export function Ocean({ store }: { store: Store }) {
           <span ref={depthLabel}>{`${Math.round(Math.max(0, (savedDepth + window.innerHeight * FOCUS - SURFACE) * METERS))} m`}</span>
         </button>
       </header>
+
+      <Sheet open={choosingSky} onClose={() => setChoosingSky(false)} title="Time of day">
+        <div className="group-body">
+          <Row
+            label="Follow the clock"
+            value={skyChoice === 'auto' ? <Icon name="check" size={16} /> : skyLabel(clock)}
+            onClick={() => chooseSky('auto')}
+          />
+        </div>
+        <div className="group-body sky-times">
+          {SKY_TIMES.map((s) => (
+            <Row key={s.value} label={s.label} value={skyChoice === s.value ? <Icon name="check" size={16} /> : undefined} onClick={() => chooseSky(s.value)} />
+          ))}
+        </div>
+      </Sheet>
 
       <div className="ocean-tide">
         <button className="depth glass" onClick={ride}>
