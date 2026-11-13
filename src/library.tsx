@@ -17,7 +17,7 @@ const VIEWS: { value: View; label: string }[] = [
   { value: 'tags', label: 'Tags' },
 ]
 /** The ocean is its own immersive screen, so its tab dives rather than switching views. */
-const TABS: { value: Tab; label: string }[] = [...VIEWS, { value: 'ocean', label: 'Ocean' }]
+const TABS: { value: Tab; label: string }[] = [...VIEWS, { value: 'ocean', label: 'My ocean' }]
 export const VIEW_KEY = 'commonplace.view'
 
 function SettingsButton({ store }: { store: Store }) {

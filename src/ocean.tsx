@@ -724,6 +724,29 @@ export function Ocean({ store }: { store: Store }) {
         }
       }
 
+      // ── Calm water behind the words: the lattice thins under each quote, most under the one in focus ──
+      const calm: { x0: number; x1: number; y0: number; y1: number; s: number }[] = []
+      if (!p.racing) {
+        for (let k = kAt(Math.max(0, top - 200)); worldY(k) < top + h + 40; k++) {
+          const y0 = worldY(k) - 14 - top
+          const y1 = y0 + textH(k)
+          if (y1 < -40) continue
+          const o = smooth(h * 0.42, h * 0.06, Math.abs(worldY(k) - 14 + textH(k) / 2 - focusWorld))
+          const left = k % 2 === 0
+          calm.push({ x0: left ? 58 : 24, x1: left ? w - 34 : w - 66, y0: y0 - 4, y1: y1 + 4, s: 0.55 + 0.4 * o })
+        }
+      }
+      const calmAt = (x: number, y: number) => {
+        let c = 0
+        for (const z of calm) {
+          const dx = Math.max(z.x0 - x, 0, x - z.x1)
+          const dy = Math.max(z.y0 - y, 0, y - z.y1)
+          const d = Math.hypot(dx, dy)
+          if (d < 22) c = Math.max(c, z.s * (1 - d / 22))
+        }
+        return c
+      }
+
       // ── The water ──
       const rowGap = GAP * 0.86
       const streak = Math.min(9, speed * 0.004) * below // dots stretch at speed
@@ -731,9 +754,9 @@ export function Ocean({ store }: { store: Store }) {
       const r1 = Math.ceil((top + h - SURFACE) / rowGap) + 1
       for (let r = r0; r <= r1; r++) {
         const y0 = SURFACE + 6 + r * rowGap
-        const below = y0 - SURFACE
-        const shallow = Math.min(1, below / 520)
-        const deep = Math.min(1, Math.max(0, (below - 520) / 2400))
+        const depthPx = y0 - SURFACE // not `below`: that name is the fade-in, used for alpha below
+        const shallow = Math.min(1, depthPx / 520)
+        const deep = Math.min(1, Math.max(0, (depthPx - 520) / 2400))
         for (let x0 = r % 2 ? 0 : -GAP / 2; x0 < w + GAP; x0 += GAP) {
           const A = 3.6 * Math.exp(-shallow * 2.6) + 0.45
           const ph = x0 * 0.028 - t * 0.9 + y0 * 0.0035
@@ -756,8 +779,8 @@ export function Ocean({ store }: { store: Store }) {
             a *= 1 - caustic * 0.8
             radius *= 1 - caustic * 0.4
             // The moon path: a glittering column under the moon.
-            if (below < 260 && Math.abs(x0 - moon.x) < 16 + below * 0.2) {
-              const glint = Math.pow(Math.max(0, Math.sin(t * 2.6 + x0 * 0.9 + r * 1.7)), 8) * lit * (1 - below / 260)
+            if (depthPx < 260 && Math.abs(x0 - moon.x) < 16 + depthPx * 0.2) {
+              const glint = Math.pow(Math.max(0, Math.sin(t * 2.6 + x0 * 0.9 + r * 1.7)), 8) * lit * (1 - depthPx / 260)
               if (glint > 0.06) {
                 color = MOONLIT
                 a = 0.35 + 0.6 * glint
@@ -775,6 +798,7 @@ export function Ocean({ store }: { store: Store }) {
               color = GLOW
             }
           }
+          if (calm.length) a *= 1 - calmAt(x, wy - top)
           ctx.fillStyle = `rgba(${color}, ${Math.max(0.03, a) * below})`
           ctx.beginPath()
           if (streak > 0.5) ctx.ellipse(x, wy - top, radius, radius + streak, 0, 0, Math.PI * 2)
@@ -1040,7 +1064,7 @@ export function Ocean({ store }: { store: Store }) {
   if (n === 0) {
     return (
       <div className="ocean empty-ocean">
-        <p className="secondary">The ocean fills as you keep quotes.</p>
+        <p className="secondary">Your ocean fills as you keep quotes.</p>
         <a className="text-button" href="#/">
           Back to the library
         </a>
@@ -1058,7 +1082,7 @@ export function Ocean({ store }: { store: Store }) {
       <canvas ref={glCanvas} className="ocean-surface" style={{ width: size.w, height: size.h }} />
 
       <div className="ocean-sky" ref={placeSky}>
-        <h1>The ocean</h1>
+        <h1>My ocean</h1>
         <p className="meta-mono">
           {n} {n === 1 ? 'drop' : 'drops'}
           {SKIES[skyTime].sun < 0.5 && ` · ${phaseName(phase).toLowerCase()}`}
