@@ -18,6 +18,13 @@ SIZE = 512
 INK = (30, 35, 29)  # --ink
 GOLD = (222, 180, 104)  # the ceremony's gold, a touch deeper
 CREAM = (250, 236, 200)
+PAPER = (255, 255, 255)  # the app's page: home screens fill transparency with black, so the icon is white
+DEEP_GOLD = (181, 138, 53)  # --gold, which reads on white
+
+
+def on_paper(r: float, c: tuple, a: float):
+    """A dot as it's drawn on white: deeper, fuller gold, with the quote in ink."""
+    return (r, INK, 1.0) if c == CREAM else (r * 1.3, DEEP_GOLD, 0.7 + 0.3 * a)
 GAP = 15  # distance between dots
 FONT = "/System/Library/Fonts/Supplemental/Georgia.ttf"
 
@@ -77,11 +84,11 @@ def dots():
 def svg(ds) -> str:
     body = "\n".join(
         f'  <circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.2f}" fill="rgb{c}"{"" if a >= 1 else f" fill-opacity={chr(34)}{a:.2f}{chr(34)}"}/>'
-        for x, y, r, c, a in ds
+        for x, y, (r, c, a) in ((x, y, on_paper(r, c, a)) for x, y, r, c, a in ds)
     )
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SIZE} {SIZE}">\n'
-        f'  <rect width="{SIZE}" height="{SIZE}" rx="112" fill="rgb{INK}"/>\n{body}\n</svg>\n'
+        f'  <rect width="{SIZE}" height="{SIZE}" rx="112" fill="rgb{PAPER}"/>\n{body}\n</svg>\n'
     )
 
 
@@ -91,11 +98,12 @@ def png(ds, size: int, rounded=True) -> Image.Image:
     d = ImageDraw.Draw(big)
     # Home screens round the corners themselves, so the PNGs are full squares.
     if rounded:
-        d.rounded_rectangle((0, 0, big.width - 1, big.height - 1), radius=112 * k, fill=INK)
+        d.rounded_rectangle((0, 0, big.width - 1, big.height - 1), radius=112 * k, fill=PAPER)
     else:
-        d.rectangle((0, 0, big.width, big.height), fill=INK)
+        d.rectangle((0, 0, big.width, big.height), fill=PAPER)
     for x, y, r, c, a in ds:
-        col = tuple(round(INK[i] + (c[i] - INK[i]) * a) for i in range(3))
+        r, c, a = on_paper(r, c, a)
+        col = tuple(round(PAPER[i] + (c[i] - PAPER[i]) * a) for i in range(3))
         d.ellipse(((x - r) * k, (y - r) * k, (x + r) * k, (y + r) * k), fill=col)
     return big.resize((size, size), Image.Resampling.LANCZOS)
 
@@ -122,8 +130,9 @@ if __name__ == "__main__":
     (ROOT / "public/mark.svg").write_text(mark_svg(ds))
     for s in (192, 512):
         png(ds, s, rounded=False).convert("RGB").save(ROOT / f"public/icon-{s}.png")
+    png(ds, 180, rounded=False).convert("RGB").save(ROOT / "public/apple-touch-icon.png")
     if "preview" in sys.argv:
-        sheet = Image.new("RGB", (512 + 40 + 192 + 40 + 64 + 40 + 32 + 40, 552), (244, 241, 232))
+        sheet = Image.new("RGB", (512 + 40 + 192 + 40 + 64 + 40 + 32 + 40, 552), (226, 222, 212))
         x = 20
         for s in (512, 192, 64, 32):
             sheet.paste(png(ds, s), (x, 20), png(ds, s))
