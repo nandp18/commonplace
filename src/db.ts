@@ -1,14 +1,15 @@
 import type { Book, Collection, Quote } from './types'
 
 const DB_NAME = 'commonplace'
-const STORES = ['books', 'quotes'] as const
+// Covers are kept apart from books: they're device-local images that never sync.
+const STORES = ['books', 'quotes', 'covers'] as const
 type StoreName = (typeof STORES)[number]
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
 function open(): Promise<IDBDatabase> {
   dbPromise ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1)
+    const req = indexedDB.open(DB_NAME, 2)
     req.onupgradeneeded = () => {
       for (const name of STORES) {
         if (!req.result.objectStoreNames.contains(name)) {
@@ -16,7 +17,14 @@ function open(): Promise<IDBDatabase> {
         }
       }
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      // Let a newer version of the app, open in another tab, upgrade the database.
+      req.result.onversionchange = () => {
+        req.result.close()
+        dbPromise = null
+      }
+      resolve(req.result)
+    }
     req.onerror = () => reject(req.error)
   })
   return dbPromise
@@ -65,6 +73,18 @@ export const putBooks = (books: Book[]) => putMany('books', books)
 export const deleteBooks = (ids: string[]) => deleteMany('books', ids)
 export const deleteQuotes = (ids: string[]) => deleteMany('quotes', ids)
 export const putQuotes = (quotes: Quote[]) => putMany('quotes', quotes)
+
+/** A book's cover image, saved on this device so it shows offline. */
+export interface StoredCover {
+  /** The book's id. */
+  id: string
+  blob: Blob
+  /** The link it was downloaded from, or 'photo' for one you took yourself. */
+  src: string
+}
+export const loadCovers = () => getAll<StoredCover>('covers')
+export const putCover = (c: StoredCover) => putMany('covers', [c])
+export const deleteCover = (bookId: string) => deleteMany('covers', [bookId])
 
 export function newId(): string {
   // crypto.randomUUID needs a secure context; the dev server over LAN is plain http.

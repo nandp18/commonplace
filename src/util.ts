@@ -45,7 +45,8 @@ export function toMarkdown(quotes: Quote[], books: Book[]): string {
   for (const book of [...books].sort((a, b) => a.title.localeCompare(b.title))) {
     const qs = quotes.filter((q) => q.bookId === book.id).sort(byPage)
     if (qs.length === 0) continue
-    out.push(`## ${book.title}${book.author ? ` — ${book.author}` : ''}`, '', ...qs.flatMap(mdQuote))
+    const details = [book.publisher, book.year, book.isbn && `ISBN ${book.isbn}`].filter(Boolean).join(' · ')
+    out.push(`## ${book.title}${book.author ? ` — ${book.author}` : ''}`, '', ...(details ? [`*${details}*`, ''] : []), ...qs.flatMap(mdQuote))
   }
   const known = new Set(books.map((b) => b.id))
   const loose = quotes.filter((q) => !q.bookId || !known.has(q.bookId))
@@ -55,10 +56,10 @@ export function toMarkdown(quotes: Quote[], books: Book[]): string {
 
 export function toCsv(quotes: Quote[], books: Map<string, Book>): string {
   const esc = (v: string | undefined) => `"${(v ?? '').replace(/"/g, '""')}"`
-  const rows = [['text', 'book', 'author', 'page', 'tags', 'note', 'language', 'created']]
+  const rows = [['text', 'book', 'author', 'page', 'tags', 'note', 'language', 'created', 'isbn']]
   for (const q of quotes) {
     const b = q.bookId ? books.get(q.bookId) : undefined
-    rows.push([q.text, b?.title ?? '', b?.author ?? '', q.page ?? '', q.tags.join(', '), q.note ?? '', q.lang, new Date(q.createdAt).toISOString()])
+    rows.push([q.text, b?.title ?? '', b?.author ?? '', q.page ?? '', q.tags.join(', '), q.note ?? '', q.lang, new Date(q.createdAt).toISOString(), b?.isbn ?? ''])
   }
   // BOM so Excel/Sheets read Gujarati as UTF-8.
   return '\uFEFF' + rows.map((r) => r.map(esc).join(',')).join('\r\n')
@@ -87,6 +88,9 @@ export function toBackup(quotes: Quote[], books: Book[]): ImportFile {
           author: b.author,
           date: date(b.createdAt),
           ...(b.cover?.startsWith('https://') ? { cover: b.cover } : {}),
+          ...(b.isbn ? { isbn: b.isbn } : {}),
+          ...(b.publisher ? { publisher: b.publisher } : {}),
+          ...(b.year ? { year: b.year } : {}),
           ...(own.length ? {} : { keepEmpty: true }),
           quotes: own,
         }

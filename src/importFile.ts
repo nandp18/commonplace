@@ -24,6 +24,10 @@ export interface ImportBook {
   date?: string
   /** Link to a cover image. Also fills in books already in the library. */
   cover?: string
+  /** ISBN-13. With publisher and year, also fills in books already in the library. */
+  isbn?: string
+  publisher?: string
+  year?: string
   /** Create this book even with no quotes. Backups set it; a covers-only file doesn't. */
   keepEmpty?: boolean
   quotes: ImportQuote[]
@@ -83,6 +87,9 @@ export function parseImportFile(json: string): ImportFile {
   for (const book of data.books) {
     const where = `In “${book.title || 'Unfiled'}”`
     if (typeof book.title !== 'string') throw new Error(`A book is missing its title. Use "" for unfiled quotes.`)
+    for (const k of ['isbn', 'publisher', 'year'] as const) {
+      if (book[k] !== undefined && typeof book[k] !== 'string') throw new Error(`${where}: ${k} must be text.`)
+    }
     if (book.cover && !/^https:\/\//.test(book.cover)) throw new Error(`${where}: the cover must be an https link.`)
     try {
       toTime(book.date)
@@ -163,10 +170,20 @@ export function planImport(file: ImportFile, existing: Collection, now: number):
     }
 
     const bookId = titleKey ? bookIds.get(titleKey) : undefined
-    const target = bookId ? (books.get(bookId) ?? liveBooks.get(bookId)) : undefined
+    let target = bookId ? (books.get(bookId) ?? liveBooks.get(bookId)) : undefined
     if (book.cover && target && !target.cover) {
-      books.set(target.id, { ...target, cover: book.cover, updatedAt: now })
+      target = { ...target, cover: book.cover, updatedAt: now }
+      books.set(target.id, target)
       covers++
+    }
+    // Details only fill blanks: what you've typed in the app wins over an old file.
+    if (target) {
+      const fill: Partial<Book> = {}
+      for (const k of ['isbn', 'publisher', 'year'] as const) {
+        const v = book[k]?.trim()
+        if (v && !target[k]) fill[k] = v
+      }
+      if (Object.keys(fill).length) books.set(target.id, { ...target, ...fill, ...(books.has(target.id) ? {} : { updatedAt: now }) })
     }
   }
   return { books: [...books.values()], quotes, skipped, covers }

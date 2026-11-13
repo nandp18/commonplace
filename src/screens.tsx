@@ -13,6 +13,7 @@ import {
   Row,
   Segmented,
 } from './components'
+import { bookDetails, BookForm } from './books'
 import { reflow, tidy } from './format'
 import { ShareSheet } from './ShareSheet'
 import { Icon } from './icons'
@@ -74,13 +75,24 @@ export function Shelf({ store }: { store: Store }) {
     for (const q of store.quotes) m.set(q.bookId ?? '', (m.get(q.bookId ?? '') ?? 0) + 1)
     return m
   }, [store.quotes])
-  const books = store.books.filter((b) => counts.get(b.id))
+  // Quoted books first, the ones you've only added after them.
+  const books = [...store.books].sort((a, b) => Number(!counts.get(a.id)) - Number(!counts.get(b.id)))
   const loose = store.quotes.filter((q) => !q.bookId || !store.bookMap.has(q.bookId)).length
+  const quoteCount = (n = 0) => (n ? `${n} ${n === 1 ? 'quote' : 'quotes'}` : 'no quotes yet')
 
   return (
-    <Page title="Books" leading={<SettingsButton store={store} />}>
+    <Page
+      title="Books"
+      leading={<SettingsButton store={store} />}
+      trailing={<GlassButton icon="plus" href="#/addbook" ariaLabel="Add a book" />}
+    >
       {books.length === 0 && loose === 0 && (
-        <p className="secondary center pad">Books appear here as you file quotes under them.</p>
+        <div className="secondary center pad shelf-add-hint">
+          <p>Scan a book’s barcode to put it on your shelf, or file a quote under it.</p>
+          <a className="ink-button" href="#/addbook?scan=1">
+            <Icon name="barcode" size={18} /> Scan a book
+          </a>
+        </div>
       )}
       <div className="cover-grid">
         {books.map((b) => (
@@ -99,7 +111,7 @@ export function Shelf({ store }: { store: Store }) {
             <BookCover book={b} morph={morphName('cover', b.id, 'grid')} />
             <span className="cover-caption-title">{b.title}</span>
             <span className="cover-caption-mono">
-              {[b.author, `${counts.get(b.id)} ${counts.get(b.id) === 1 ? 'quote' : 'quotes'}`].filter(Boolean).join(' · ')}
+              {[b.author, quoteCount(counts.get(b.id))].filter(Boolean).join(' · ')}
             </span>
           </a>
         ))}
@@ -117,8 +129,6 @@ export function BookView({ store, id }: { store: Store; id: string }) {
   const isLoose = id === 'loose'
   const book = isLoose ? undefined : store.bookMap.get(id)
   const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState(book?.title ?? '')
-  const [author, setAuthor] = useState(book?.author ?? '')
   const quotes = store.quotes
     .filter((q) => (isLoose ? !q.bookId || !store.bookMap.has(q.bookId) : q.bookId === id))
     .sort(byPage)
@@ -133,35 +143,14 @@ export function BookView({ store, id }: { store: Store; id: string }) {
     >
       {book ? (
         <div className="book-hero">
-          <BookCover
-            book={{ ...book, title: editing ? title || book.title : book.title }}
-            size="large"
-            morph={morphName('cover', book.id, 'detail')}
-          />
           {editing ? (
-            <div className="fields card">
-              <label className="field-line">
-                <span className="field-label">Title</span>
-                <input className="field-input" value={title} onChange={(e) => setTitle(e.target.value)} />
-              </label>
-              <label className="field-line">
-                <span className="field-label">Author</span>
-                <input className="field-input" value={author} placeholder="—" onChange={(e) => setAuthor(e.target.value)} />
-              </label>
-              <button
-                className="ink-button wide"
-                onClick={async () => {
-                  if (title.trim()) await store.updateBook({ ...book, title: title.trim(), author: author.trim() })
-                  setEditing(false)
-                }}
-              >
-                Save
-              </button>
-            </div>
+            <BookForm store={store} book={book} onSaved={(b) => (b.id === book.id ? setEditing(false) : go(`/book/${b.id}`))} />
           ) : (
             <>
+              <BookCover book={book} size="large" morph={morphName('cover', book.id, 'detail')} />
               <h1 className="book-hero-title">{book.title}</h1>
               {book.author && <p className="book-hero-author">by {book.author}</p>}
+              {bookDetails(book) && <p className="book-hero-details">{bookDetails(book)}</p>}
               <span className="count-pill">
                 {quotes.length} {quotes.length === 1 ? 'quote' : 'quotes'}
               </span>

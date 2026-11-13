@@ -8,13 +8,14 @@ import { haptic, hasMorph } from './motion'
 import { Library } from './library'
 import { Ocean } from './ocean'
 import { SeaLab } from './sealab'
+import { AddBook } from './books'
 import { BookView, NewQuote, QuoteView, Settings, Shelf } from './screens'
 import { useStore } from './store'
 
 /** How deep a route sits, so navigation can slide forward or back like iOS. */
 const depth = (hash: string) => {
   const s = hash.replace(/^#\/?/, '').split(/[/?]/)[0]
-  return s === 'book' || s === 'quote' || s === 'settings' || s === 'new' || s === 'ocean' ? 1 : s === 'capture' ? 2 : 0
+  return s === 'book' || s === 'addbook' || s === 'quote' || s === 'settings' || s === 'new' || s === 'ocean' ? 1 : s === 'capture' ? 2 : 0
 }
 
 function useRoute() {
@@ -145,6 +146,9 @@ export function App() {
     case 'books':
       screen = <Shelf store={store} />
       break
+    case 'addbook':
+      screen = <AddBook key={hash} store={store} scan={params.has('scan')} />
+      break
     case 'book':
       screen = <BookView key={id} store={store} id={id} />
       break
@@ -165,7 +169,7 @@ export function App() {
   }
 
   const inLibrary = !section || section === 'quote'
-  const inBooks = section === 'books' || section === 'book'
+  const inBooks = section === 'books' || section === 'book' || section === 'addbook'
 
   return (
     <>

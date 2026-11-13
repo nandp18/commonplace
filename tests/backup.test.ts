@@ -9,7 +9,7 @@ const book = (id: string, title: string, more: Partial<Book> = {}): Book => ({ i
 const quote = (id: string, text: string, more: Partial<Quote> = {}): Quote => ({ id, text, tags: [], lang: 'eng', createdAt: 1_600_000_000_123, updatedAt: 2000, ...more })
 
 const books = [
-  book('b1', 'Quiet', { cover: 'https://example.com/quiet.jpg' }),
+  book('b1', 'Quiet', { cover: 'https://example.com/quiet.jpg', isbn: '9780307352156', publisher: 'Crown', year: '2012' }),
   book('b2', 'કલાપીનો કેકારવ', { author: 'કલાપી' }),
   book('b3', 'Not started yet'),
   book('b4', 'Odd cover', { cover: 'http://example.com/insecure.jpg' }),
@@ -48,6 +48,33 @@ assert.equal(byText('Its book was deleted.').bookId, undefined)
 assert.equal(plan.books.find((b) => b.title === 'કલાપીનો કેકારવ')!.author, 'કલાપી')
 assert.equal(plan.books.find((b) => b.title === 'Quiet')!.cover, 'https://example.com/quiet.jpg')
 assert.equal(plan.books.find((b) => b.title === 'Odd cover')!.cover, undefined, 'a non-https cover cannot block a restore')
+
+const quiet = plan.books.find((b) => b.title === 'Quiet')!
+assert.equal(quiet.isbn, '9780307352156', 'ISBN survives a backup')
+assert.equal(quiet.publisher, 'Crown')
+assert.equal(quiet.year, '2012')
+assert.equal(plan.books.find((b) => b.title === 'Not started yet')!.isbn, undefined)
+
+// A backup from before books had ISBNs still restores
+const oldBackup = {
+  version: 1,
+  books: [
+    { title: 'Walden', author: 'Thoreau', date: '2020-01-01T00:00:00.000Z', quotes: [{ text: 'Simplify, simplify.', date: '2020-01-02T00:00:00.000Z', lang: 'eng', tags: [] }] },
+    { title: 'Unread', author: '', keepEmpty: true, quotes: [] },
+  ],
+}
+const old = planImport(parseImportFile(JSON.stringify(oldBackup)), empty, NOW)
+assert.equal(old.quotes.length, 1)
+assert.equal(old.books.length, 2)
+assert.deepEqual(Object.keys(old.books[0]).sort(), ['author', 'createdAt', 'id', 'title', 'updatedAt'], 'no empty new fields')
+
+// A newer backup fills in details on a book you already have, but never overwrites them
+const mine: Collection = { version: 1, books: [book('m1', 'Quiet', { publisher: 'My edition' })], quotes: [] }
+const filled = planImport(file, mine, NOW).books.find((b) => b.id === 'm1')!
+assert.equal(filled.isbn, '9780307352156')
+assert.equal(filled.publisher, 'My edition')
+assert.equal(filled.updatedAt, NOW, 'so the change syncs')
+assert.throws(() => parseImportFile(JSON.stringify({ version: 1, books: [{ title: 'X', author: '', isbn: 9780307352156, quotes: [] }] })), /isbn must be text/)
 
 // Restoring onto a library that already has it all adds nothing
 const restored: Collection = { version: 1, books: plan.books, quotes: plan.quotes }

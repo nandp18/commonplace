@@ -5,6 +5,8 @@ import { transliterate } from './transliterate'
 import { Icon, type IconName } from './icons'
 import { haptic, markTransition, morphName, useReveal } from './motion'
 import { setPendingPhoto } from './pending'
+import { useCoverSrc } from './covers'
+import { BookForm } from './books'
 import type { Store } from './store'
 import { parseTags } from './util'
 import type { Book, Lang, Quote } from './types'
@@ -469,8 +471,9 @@ export function BookPicker({
 }) {
   const [query, setQuery] = useState('')
   const [author, setAuthor] = useState('')
+  const [adding, setAdding] = useState(false)
   useEffect(() => {
-    if (open) setQuery(''), setAuthor('')
+    if (open) setQuery(''), setAuthor(''), setAdding(false)
   }, [open])
 
   // Most recently quoted first: the book you're reading floats to the top.
@@ -514,7 +517,7 @@ export function BookPicker({
             <button
               className="pill small"
               onClick={async () => {
-                const book = await store.saveBook(query, author)
+                const book = await store.saveBook({ title: query, author })
                 onPick(book.id)
                 onClose()
               }}
@@ -524,6 +527,26 @@ export function BookPicker({
           </div>
         </Group>
       )}
+      <Group>
+        <Row icon="barcode" tint label="Scan a book’s barcode" onClick={() => setAdding(true)} />
+      </Group>
+      <Sheet
+        open={open && adding}
+        onClose={() => setAdding(false)}
+        title="Add a book"
+        tall
+        leading={<GlassButton icon="close" onClick={() => setAdding(false)} ariaLabel="Close" />}
+      >
+        <BookForm
+          store={store}
+          scan
+          initialTitle={query.trim()}
+          onSaved={(book) => {
+            onPick(book.id)
+            onClose()
+          }}
+        />
+      </Sheet>
       <Group>
         <Row
           label={<span className="muted">No book</span>}
@@ -571,18 +594,33 @@ function hash(s: string) {
 
 export const coverColor = (b: Book) => CLOTH[hash(b.id + b.title) % CLOTH.length]
 
-/** A generated cloth-bound cover, so every book looks like a book. */
-export function BookCover({ book, size = 'grid', morph }: { book: Book; size?: 'grid' | 'large' | 'small' | 'mini'; morph?: string }) {
+/**
+ * The book's cover, or a generated cloth-bound one so every book looks like a book.
+ * `src` shows a specific image instead (a preview while editing); null forces the cloth.
+ */
+export function BookCover({
+  book,
+  size = 'grid',
+  morph,
+  src,
+}: {
+  book: Book
+  size?: 'grid' | 'large' | 'small' | 'mini'
+  morph?: string
+  src?: string | null
+}) {
   const gu = isGujarati(book.title)
+  const stored = useCoverSrc(book, src !== undefined)
+  const want = src === undefined ? stored : (src ?? undefined)
   // A dead or offline link falls back to the generated cover.
-  const [failed, setFailed] = useState(false)
-  const image = book.cover && !failed ? book.cover : undefined
+  const [failed, setFailed] = useState<string | undefined>()
+  const image = want && failed !== want ? want : undefined
   return (
     <div
       className={`cover ${size} ${image ? 'has-image' : ''}`}
       style={{ ['--cloth' as string]: coverColor(book), viewTransitionName: morph } as React.CSSProperties}
     >
-      {image && <img className="cover-img" src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />}
+      {image && <img className="cover-img" src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(image)} />}
       {!image && (size === 'grid' || size === 'large') && (
         <>
           <span className={`cover-title ${gu ? 'gu' : ''}`}>{book.title}</span>

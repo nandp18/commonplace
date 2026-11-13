@@ -10,6 +10,24 @@ const LAST_BOOK = 'commonplace.lastBook'
 /** The book you're probably still reading: new captures are filed under it. */
 export const currentBookId = () => localStorage.getItem(LAST_BOOK) ?? undefined
 
+/** What you fill in for a book; the rest is bookkeeping. */
+export type BookDraft = Pick<Book, 'title' | 'author'> & Partial<Pick<Book, 'cover' | 'isbn' | 'publisher' | 'year'>>
+
+/** Trimmed, with empty optional fields left out rather than stored as "". */
+function tidyBook(d: BookDraft): BookDraft {
+  const opt = (v?: string) => v?.trim() || undefined
+  return compact({
+    title: d.title.trim(),
+    author: d.author.split(',').map((a) => a.trim()).filter(Boolean).join(', '),
+    cover: opt(d.cover),
+    isbn: opt(d.isbn),
+    publisher: opt(d.publisher),
+    year: opt(d.year),
+  })
+}
+
+const compact = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T
+
 export type SyncState =
   | { kind: 'off' }
   | { kind: 'syncing' }
@@ -85,9 +103,9 @@ export function useStore() {
   )
 
   const saveBook = useCallback(
-    async (title: string, author: string): Promise<Book> => {
+    async (draft: BookDraft): Promise<Book> => {
       const now = Date.now()
-      const book: Book = { id: newId(), title: title.trim(), author: author.trim(), createdAt: now, updatedAt: now }
+      const book: Book = { ...tidyBook(draft), id: newId(), createdAt: now, updatedAt: now }
       await putBooks([book])
       setAll((c) => ({ ...c, books: [...c.books, book] }))
       scheduleSync()
@@ -98,7 +116,7 @@ export function useStore() {
 
   const updateBook = useCallback(
     async (book: Book) => {
-      const next = { ...book, updatedAt: Date.now() }
+      const next: Book = compact({ ...book, cover: undefined, isbn: undefined, publisher: undefined, year: undefined, ...tidyBook(book), updatedAt: Date.now() })
       await putBooks([next])
       setAll((c) => ({ ...c, books: c.books.map((b) => (b.id === next.id ? next : b)) }))
       scheduleSync()

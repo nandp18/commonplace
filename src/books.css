@@ -1,0 +1,96 @@
+/* ───────────── Adding a book: scanner, ISBN card, cover editing ───────────── */
+
+.book-form { padding-bottom: 12px; }
+
+.isbn-card {
+  display: flex; flex-direction: column; gap: 12px;
+  margin: 14px 0 6px; padding: 16px; border-radius: 26px; background: var(--cream);
+  /* Faint halftone, like the paper the rest of the app is printed on. */
+  background-image: radial-gradient(rgba(181, 138, 53, 0.16) 0.9px, transparent 1.2px);
+  background-size: 7px 7px;
+}
+.isbn-row { display: flex; gap: 10px; align-items: center; }
+.isbn-row .field-input { min-width: 0; font: 16px/1.2 var(--mono); letter-spacing: 0.02em; background: var(--bg); }
+.isbn-row .pill { flex: none; padding: 11px 16px; }
+.pill:disabled { background: var(--field); color: var(--tertiary); }
+.isbn-status { font: 12.5px/1.45 var(--mono); color: var(--secondary); margin: 0 4px; }
+.isbn-status.found { color: var(--text); }
+.isbn-status.bad { color: var(--red); }
+.isbn-status.looking::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: isbn-dots 1.2s steps(4) infinite; }
+@keyframes isbn-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+.link-button { color: var(--gold); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+
+.cover-edit { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 22px 0 0; }
+.cover-edit .cover { transition: opacity 0.3s, transform 0.6s var(--spring); }
+.cover-edit.looking .cover { opacity: 0.45; }
+.cover-edit-actions { display: flex; gap: 6px; justify-content: center; }
+.cover-edit-actions .text-button { cursor: pointer; font-size: 15px; }
+.book-fields .field-label { min-width: 72px; font-size: 15px; }
+.book-fields .field-input { font-size: 16px; }
+
+/* The small print under a book's title. */
+.book-hero-details { font: 11.5px/1.5 var(--mono); color: var(--tertiary); margin-top: 6px; letter-spacing: 0.02em; }
+.shelf-add-hint { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+/* ───────────── Scanner: the one other dark place, a viewfinder ───────────── */
+
+.scanner {
+  position: fixed; inset: 0; z-index: 1000; background: #0d0f0c; color: #fff;
+  display: flex; flex-direction: column; justify-content: space-between;
+  animation: scanner-in 0.3s var(--spring);
+}
+@keyframes scanner-in { from { opacity: 0; } }
+.scanner-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.4s; }
+.scanner-video.on { opacity: 1; }
+.scanner-top {
+  position: relative; display: flex; align-items: center; justify-content: space-between;
+  padding: calc(14px + var(--top)) 18px 14px;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), transparent);
+}
+.scanner-title { font-size: 17px; font-weight: 600; }
+.scanner-text-button { font-size: 17px; color: rgba(255, 255, 255, 0.92); min-width: 64px; text-align: left; padding: 6px 0; }
+.scanner-window {
+  position: relative; align-self: center; width: min(78vw, 340px); aspect-ratio: 16 / 9;
+  /* Everything outside the window is dimmed. */
+  box-shadow: 0 0 0 100vmax rgba(8, 9, 7, 0.55); border-radius: 14px;
+}
+.scanner-corner { position: absolute; width: 26px; height: 26px; border: 3px solid var(--gold); }
+.scanner-corner.tl { top: -2px; left: -2px; border-right: 0; border-bottom: 0; border-top-left-radius: 14px; }
+.scanner-corner.tr { top: -2px; right: -2px; border-left: 0; border-bottom: 0; border-top-right-radius: 14px; }
+.scanner-corner.bl { bottom: -2px; left: -2px; border-right: 0; border-top: 0; border-bottom-left-radius: 14px; }
+.scanner-corner.br { bottom: -2px; right: -2px; border-left: 0; border-top: 0; border-bottom-right-radius: 14px; }
+/* A dotted gold line sweeping across, in the app's halftone. */
+.scanner-line {
+  position: absolute; left: 8%; right: 8%; top: 50%; height: 4px;
+  background: radial-gradient(circle, var(--gold) 1.4px, transparent 1.9px) 0 0 / 7px 4px repeat-x;
+  filter: drop-shadow(0 0 6px rgba(181, 138, 53, 0.9));
+  animation: scanner-sweep 1.8s ease-in-out infinite alternate;
+}
+@keyframes scanner-sweep { from { transform: translateY(-34px); } to { transform: translateY(34px); } }
+@media (prefers-reduced-motion: reduce) { .scanner-line { animation: none; } }
+.scanner-off { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.35); }
+.scanner-bottom {
+  position: relative; display: flex; flex-direction: column; gap: 16px; align-items: center;
+  padding: 18px 20px calc(24px + var(--bottom));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6) 30%);
+}
+.scanner-hint { font-size: 15px; line-height: 1.4; color: rgba(255, 255, 255, 0.78); text-align: center; max-width: 320px; min-height: 42px; }
+.scanner-actions { display: flex; gap: 10px; }
+.scanner-chip {
+  display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 99px; cursor: pointer;
+  font-size: 15px; color: #fff; background: rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+}
+.scanner-chip:active { background: rgba(255, 255, 255, 0.24); }
+.scanner-type { display: flex; gap: 10px; width: min(100%, 340px); }
+.scanner-type input {
+  flex: 1; min-width: 0; border: 0; outline: none; border-radius: 99px; padding: 11px 16px;
+  font: 17px/1.2 var(--mono); color: #fff; background: rgba(255, 255, 255, 0.16);
+}
+.scanner-type input::placeholder { color: rgba(255, 255, 255, 0.45); }
+.scanner-type .pill { background: var(--gold); color: #fff; }
+.scanner-type .pill:disabled { background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.4); }
+
+/* Inside a cream sheet, the cards sit on white paper instead. */
+.sheet .isbn-card, .sheet .book-fields { background-color: var(--bg); }
+.sheet .isbn-row .field-input { background: var(--field); }
