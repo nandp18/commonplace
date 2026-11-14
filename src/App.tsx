@@ -1,17 +1,34 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { Capture } from './Capture'
 import { CaptureButton } from './components'
 import { Icon } from './icons'
 import { ceremonyActive } from './drop'
 import { haptic, hasMorph } from './motion'
 import { Library } from './library'
-import { Ocean } from './ocean'
-import { SeaLab } from './sealab'
 import { AddBook } from './books'
 import { BookView, NewQuote, QuoteView, Settings, Shelf } from './screens'
 import { useStore } from './store'
 import { takeSwipeNav } from './swipe'
+import { preloadable, whenIdle } from './lazy'
+import type { Store } from './store'
+
+// Kept out of the startup bundle: capture brings the OCR engine, the ocean its WebGL and sea life.
+const captureScreen = preloadable(() => import('./Capture'))
+const oceanScreen = preloadable(() => import('./ocean'))
+const labScreen = preloadable(() => import('./sealab'))
+
+function Capture({ store }: { store: Store }) {
+  const { Capture } = captureScreen.useModule()
+  return <Capture store={store} />
+}
+function Ocean({ store }: { store: Store }) {
+  const { Ocean } = oceanScreen.useModule()
+  return <Ocean store={store} />
+}
+function SeaLab() {
+  const { SeaLab } = labScreen.useModule()
+  return <SeaLab />
+}
 
 /** How deep a route sits, so navigation can slide forward or back like iOS. */
 const depth = (hash: string) => {
@@ -92,6 +109,7 @@ function CaptureMenu() {
   const root = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
+    captureScreen.preload()
     const close = (e: Event) => !root.current?.contains(e.target as Node) && setOpen(false)
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     document.addEventListener('pointerdown', close)
@@ -135,6 +153,7 @@ function CaptureMenu() {
 export function App() {
   const store = useStore()
   const { hash, parts, params } = useRoute()
+  useEffect(() => whenIdle(() => (captureScreen.preload(), oceanScreen.preload())), [])
   const [section, id] = parts
 
   let screen
@@ -175,7 +194,9 @@ export function App() {
 
   return (
     <>
-      <main className={section === 'capture' || section === 'ocean' || section === 'lab' ? 'full' : ''}>{screen}</main>
+      <main className={section === 'capture' || section === 'ocean' || section === 'lab' ? 'full' : ''}>
+        <Suspense fallback={null}>{screen}</Suspense>
+      </main>
       {section !== 'capture' && section !== 'ocean' && section !== 'lab' && <TabBar inLibrary={inLibrary} inBooks={inBooks} />}
     </>
   )

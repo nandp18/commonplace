@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react'
-import { prepareOffline } from './ocr'
 
 /**
  * Offline support: the service worker (sw/sw.js) keeps the app and the OCR readers on the phone.
@@ -36,6 +35,7 @@ async function prepare() {
   try {
     if ((await readersSaved()) && localStorage.getItem(READY_KEY)) return set('ready')
     if (!navigator.onLine) return set('failed')
+    const { prepareOffline } = await import('./ocr')
     await prepareOffline()
     localStorage.setItem(READY_KEY, String(Date.now()))
     set('ready')
