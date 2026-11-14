@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { haptic, reducedMotion } from './motion'
+import type { WordBox } from './liftOff'
 import { ScanVeil } from './ScanVeil'
 import { extendTo, lineHeight, nearestWord, selectRange, sentenceAt, wordAt, type OcrWord, type Pt, type Range } from './selection'
 
@@ -16,11 +17,21 @@ interface Props {
   onRange: (r: Range | null) => void
   /** Raw gesture in photo pixels, for when there are no words to snap to. */
   onStroke: (stroke: Pt[] | null) => void
+  /** Filled in with a way to ask where words are on screen right now. */
+  handle?: { current: PageSelectHandle | null }
 }
 
-const HIGHLIGHT = 'rgba(112, 148, 236, 0.5)'
-const INK = 'rgba(112, 148, 236, 0.55)'
-const HANDLE = '#3478F6'
+export interface PageSelectHandle {
+  wordBoxes: (range: Range) => WordBox[]
+}
+
+// A real highlighter: warm gold, laid over the page with multiply.
+const HIGHLIGHT = 'rgba(246, 196, 72, 0.55)'
+const INK = 'rgba(246, 196, 72, 0.6)'
+const HANDLE = '#c08a2a'
+/** How long the light takes to run across each word, and the most the whole run may take. */
+const RIPPLE_WORD = 170
+const RIPPLE_MAX = 650
 
 type Mode = 'none' | 'draw' | 'pinch' | 'start' | 'end'
 
@@ -34,7 +45,7 @@ const LOUPE_ZOOM = 2.2
  * reach to it, or draw any rough loop or swipe; the selection snaps to whole words.
  * Drag the handles to adjust, with a magnifier under your finger. Pinch to zoom in on small print.
  */
-export function PageSelect({ src, words, reading, run, pendingStroke, range, onImage, onRange, onStroke }: Props) {
+export function PageSelect({ src, words, reading, run, pendingStroke, range, onImage, onRange, onStroke, handle }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
   const img = useRef<HTMLImageElement>(null)
@@ -50,6 +61,8 @@ export function PageSelect({ src, words, reading, run, pendingStroke, range, onI
   const loupe = useRef<HTMLCanvasElement>(null)
   const [loupeAt, setLoupeAt] = useState<Pt | null>(null)
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null)
+  /** A tapped selection lighting up from the finger outwards; words in `keep` were already lit. */
+  const ripple = useRef<{ from: number; t0: number; keep: Range | null; to: Range } | null>(null)
   /** The finished stroke melting away as the highlight settles. */
   const fading = useRef<{ pts: Pt[]; a: number } | null>(null)
   const live = useRef({ words, range, pendingStroke })
@@ -57,6 +70,20 @@ export function PageSelect({ src, words, reading, run, pendingStroke, range, onI
 
   /** Photo pixels per display pixel. */
   const k = () => (img.current ? img.current.naturalWidth / img.current.clientWidth : 1)
+
+  if (handle)
+    handle.current = {
+      wordBoxes: ([a, b]) => {
+        const ws = live.current.words
+        if (!ws || !inner.current) return []
+        const r = inner.current.getBoundingClientRect()
+        const kk = k(), s = view.current.s
+        return ws.slice(a, b + 1).map((w) => ({
+          screen: { x: r.left + (w.x0 / kk) * s, y: r.top + (w.y0 / kk) * s, w: ((w.x1 - w.x0) / kk) * s, h: ((w.y1 - w.y0) / kk) * s },
+          src: { x: w.x0, y: w.y0, w: w.x1 - w.x0, h: w.y1 - w.y0 },
+        }))
+      },
+    }
 
   const redraw = useCallback(() => {
     const c = canvas.current, el = img.current
@@ -70,7 +97,35 @@ export function PageSelect({ src, words, reading, run, pendingStroke, range, onI
     const s = view.current.s
 
     ctx.globalCompositeOperation = 'multiply'
-    if (words && range) {
+    const rip = ripple.current
+    const glints: { x: number; y: number; w: number; h: number; a: number }[] = []
+    if (words && range && rip) {
+      // The highlight runs out from the tapped word, word by word, like a pen being drawn.
+      const step = Math.min(28, RIPPLE_MAX / Math.max(1, range[1] - range[0]))
+      const age = performance.now() - rip.t0
+      let done = true
+      ctx.fillStyle = HIGHLIGHT
+      for (let i = range[0]; i <= range[1]; i++) {
+        const w = words[i]
+        const lit = rip.keep && i >= rip.keep[0] && i <= rip.keep[1]
+        const p = lit ? 1 : Math.max(0, Math.min(1, (age - Math.abs(i - rip.from) * step) / RIPPLE_WORD))
+        if (p < 1) done = false
+        if (p <= 0) continue
+        const e = 1 - (1 - p) ** 3
+        const pad = (w.y1 - w.y0) * 0.14
+        const x0 = (w.x0 - pad) / kk, x1 = (w.x1 + pad) / kk
+        const width = (x1 - x0) * e
+        // Grow away from the tap: rightwards after it, leftwards before it.
+        const left = i >= rip.from ? x0 : x1 - width
+        const y = (w.y0 - pad) / kk, h = (w.y1 - w.y0 + 2 * pad) / kk
+        ctx.beginPath()
+        ctx.roundRect(left, y, width, h, 3 / s)
+        ctx.fill()
+        if (!lit && p < 1) glints.push({ x: i >= rip.from ? left + width : left, y, w: 0, h, a: 1 - p })
+      }
+      // (Until the new selection has reached us, the old one is still showing: not done yet.)
+      if (done && range[0] === rip.to[0] && range[1] === rip.to[1]) ripple.current = null
+    } else if (words && range) {
       // One highlighter band per line, like a real highlighter.
       const bands = new Map<number, { x0: number; y0: number; x1: number; y1: number }>()
       for (let i = range[0]; i <= range[1]; i++) {
@@ -108,8 +163,18 @@ export function PageSelect({ src, words, reading, run, pendingStroke, range, onI
     }
     ctx.globalCompositeOperation = 'source-over'
 
+    // The bright tip of the light as it runs.
+    for (const g of glints) {
+      const r = g.h * 0.9
+      const grad = ctx.createRadialGradient(g.x, g.y + g.h / 2, 0, g.x, g.y + g.h / 2, r)
+      grad.addColorStop(0, `rgba(255, 246, 214, ${0.85 * g.a})`)
+      grad.addColorStop(1, 'rgba(255, 236, 180, 0)')
+      ctx.fillStyle = grad
+      ctx.fillRect(g.x - r, g.y + g.h / 2 - r, 2 * r, 2 * r)
+    }
+
     // Selection handles, iOS style: a stem with a knob.
-    if (words && range && mode.current !== 'draw') {
+    if (words && range && mode.current !== 'draw' && !ripple.current) {
       const a = words[range[0]], b = words[range[1]]
       const r = 6 / s
       ctx.fillStyle = ctx.strokeStyle = HANDLE
@@ -288,6 +353,16 @@ export function PageSelect({ src, words, reading, run, pendingStroke, range, onI
     onStroke(null)
     onRange(next)
     haptic('tap')
+    if (!reducedMotion() && (!current || next[0] !== current[0] || next[1] !== current[1])) {
+      ripple.current = { from: i, t0: performance.now(), keep: current, to: next }
+      const tick = () => {
+        redraw()
+        // Once the light has run its course, settle into joined bands, one per line.
+        if (ripple.current) requestAnimationFrame(tick)
+        else redraw()
+      }
+      requestAnimationFrame(tick)
+    }
   }
 
   const onUp = (e: React.PointerEvent) => {

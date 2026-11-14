@@ -603,6 +603,7 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
 }
 .stage-inner { position: relative; transform-origin: 0 0; line-height: 0; will-change: transform; }
 .stage img { display: block; max-width: 100vw; max-height: 100dvh; transition: filter 0.8s var(--spring); }
+.capture.is-lifting .stage img { filter: brightness(0.35) saturate(0.5); transition-duration: 0.35s; }
 .capture.is-reading .stage img { filter: brightness(0.16) saturate(0.3) contrast(1.2); }
 .stage canvas { position: absolute; inset: 0; pointer-events: none; }
 .scan-veil { mix-blend-mode: screen; }
@@ -613,6 +614,7 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
 .scan-paper.on { opacity: 0.22; }
 .scan-bloom { mix-blend-mode: screen; filter: blur(7px) saturate(1.3); opacity: 0.9; }
 
+.lift-off { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 60; pointer-events: none; }
 .loupe {
   position: absolute; z-index: 3; width: 128px; height: 128px; margin: -190px 0 0 -64px; border-radius: 50%;
   pointer-events: none; opacity: 0; transform: scale(0.6) translateY(40px);

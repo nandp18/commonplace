@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CaptureButton, EditableQuote, go, QuoteFields, Segmented, Sheet } from './components'
 import { fileIntoSea } from './drop'
-import { haptic } from './motion'
+import { haptic, reducedMotion } from './motion'
 import { PageArt } from './screens'
 import { formatSelection, isGujarati, readsAsEnglish } from './format'
 import { Icon } from './icons'
 import { readPage, readQuality, readRegion, rereadSelection, warmUp, WRONG_LANGUAGE } from './ocr'
-import { PageSelect } from './PageSelect'
+import { PageSelect, type PageSelectHandle } from './PageSelect'
+import { liftOff } from './liftOff'
 import { takePendingPhoto } from './pending'
 import { detectPageNumber, selectRange, type OcrWord, type Pt, type Range } from './selection'
 import { currentBookId, type Store } from './store'
@@ -37,6 +38,8 @@ export function Capture({ store }: { store: Store }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<{ id: string; uncertain: string[] } | null>(null)
   const filingCard = useRef<HTMLDivElement>(null)
+  const selectHandle = useRef<PageSelectHandle | null>(null)
+  const [lifting, setLifting] = useState(false)
   const [filingAway, setFilingAway] = useState(false)
 
   useEffect(() => {
@@ -114,6 +117,11 @@ export function Capture({ store }: { store: Store }) {
     const img = imgEl.current
     if (!img || saving) return
     setSaving(true)
+    // The chosen words rise off the page in gold while the save finishes.
+    const lift = words && range && !reducedMotion() && selectHandle.current ? liftOff(img, selectHandle.current.wordBoxes(range)) : null
+    // The page dims so the rising words glow against it.
+    if (lift) setLifting(true)
+    let flying = false
     try {
       let text = '', uncertain: string[] = []
       if (words && range) {
@@ -144,7 +152,16 @@ export function Capture({ store }: { store: Store }) {
       })
       haptic('success')
       setSaved({ id: q.id, uncertain })
+      if (lift) {
+        // …then burst and fly down into the quote card as it slides up.
+        flying = true
+        lift.burst(() => (document.querySelector('.saved-quote .quote-text') ?? document.querySelector('.saved-quote'))?.getBoundingClientRect() ?? null).then(() => setLifting(false))
+      }
     } finally {
+      if (!flying) {
+        lift?.cancel()
+        setLifting(false)
+      }
       setSaving(false)
     }
   }
@@ -178,7 +195,7 @@ export function Capture({ store }: { store: Store }) {
   }
 
   return (
-    <div className={`capture ${reading ? 'is-reading' : ''}`}>
+    <div className={`capture ${reading ? 'is-reading' : ''} ${lifting ? 'is-lifting' : ''}`}>
       <PageSelect
         src={src}
         words={words}
@@ -192,6 +209,7 @@ export function Capture({ store }: { store: Store }) {
         }}
         onRange={setRange}
         onStroke={setStroke}
+        handle={selectHandle}
       />
 
       <header className="capture-top">
