@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { deleteBooks, deleteQuotes, loadAll, newId, putBooks, putQuotes } from './db'
 import { planImport, type ImportFile, type ImportPlan } from './importFile'
 import { isSample, sampleLibrary } from './samples'
-import { loadSyncConfig, sync } from './sync'
+import { explainSyncError, loadSyncConfig, sync } from './sync'
 import type { Book, Collection, Quote } from './types'
 
 const LAST_BOOK = 'commonplace.lastBook'
+const LAST_SYNC = 'commonplace.lastSync'
+/** After a failure worth retrying, wait this long before each next try. */
+const RETRY_AFTER = [30_000, 120_000, 600_000, 1_800_000]
 
 /** The book you're probably still reading: new captures are filed under it. */
 export const currentBookId = () => localStorage.getItem(LAST_BOOK) ?? undefined
@@ -32,7 +35,8 @@ export type SyncState =
   | { kind: 'off' }
   | { kind: 'syncing' }
   | { kind: 'ok'; at: number }
-  | { kind: 'error'; message: string }
+  | { kind: 'offline' }
+  | { kind: 'error'; message: string; retry: boolean }
 
 export function useStore() {
   const [all, setAll] = useState<Collection>({ version: 1, books: [], quotes: [] })
@@ -40,17 +44,26 @@ export function useStore() {
   const [syncState, setSyncState] = useState<SyncState>(() =>
     loadSyncConfig() ? { kind: 'syncing' } : { kind: 'off' },
   )
+  /** When the last sync that finished started: anything changed after it isn't on GitHub yet. */
+  const [lastSync, setLastSync] = useState(() => Number(localStorage.getItem(LAST_SYNC)) || 0)
   const syncTimer = useRef<number | undefined>(undefined)
+  const retryTimer = useRef<number | undefined>(undefined)
+  const failures = useRef(0)
   const syncing = useRef(false)
+  /** A sync was asked for while one was running: run again when it ends, so that change isn't left behind. */
+  const again = useRef(false)
   const latest = useRef(all)
   latest.current = all
 
   const runSync = useCallback(async () => {
     const cfg = loadSyncConfig()
+    clearTimeout(retryTimer.current)
     if (!cfg) return setSyncState({ kind: 'off' })
-    if (syncing.current) return
+    if (syncing.current) return void (again.current = true)
+    if (!navigator.onLine) return setSyncState({ kind: 'offline' })
     syncing.current = true
     setSyncState({ kind: 'syncing' })
+    const started = Date.now()
     try {
       // Sample quotes are for trying the app out; they never leave the device.
       const local = await loadAll()
@@ -62,11 +75,23 @@ export function useStore() {
       await putBooks(merged.books)
       await putQuotes(merged.quotes)
       setAll(await loadAll())
+      localStorage.setItem(LAST_SYNC, String(started))
+      setLastSync(started)
+      failures.current = 0
       setSyncState({ kind: 'ok', at: Date.now() })
     } catch (e) {
-      setSyncState({ kind: 'error', message: (e as Error).message })
+      const problem = explainSyncError(e, cfg, navigator.onLine)
+      setSyncState(problem.offline ? { kind: 'offline' } : { kind: 'error', message: problem.message, retry: problem.retry })
+      if (problem.retry && !problem.offline) {
+        const wait = RETRY_AFTER[Math.min(failures.current++, RETRY_AFTER.length - 1)]
+        retryTimer.current = window.setTimeout(() => runSync(), wait)
+      }
     } finally {
       syncing.current = false
+      if (again.current) {
+        again.current = false
+        runSync()
+      }
     }
   }, [])
 
@@ -82,8 +107,13 @@ export function useStore() {
       runSync()
     })
     const onVisible = () => document.visibilityState === 'visible' && runSync()
+    const onOnline = () => runSync()
     document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
+    window.addEventListener('online', onOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', onOnline)
+    }
   }, [runSync])
 
   // Ask the browser not to clear this library when it's short on space or the app sits unused.
@@ -217,9 +247,15 @@ export function useStore() {
 
   const hasSamples = useMemo(() => all.quotes.some((q) => isSample(q.id)), [all.quotes])
 
+  /** Quotes and books changed on this device since the last sync, so not on GitHub yet. */
+  const unsynced = useMemo(
+    () => [...all.quotes, ...all.books].filter((r) => r.updatedAt > lastSync && !isSample(r.id)).length,
+    [all, lastSync],
+  )
+
   return {
     ready, books, bookMap, quotes, saveBook, updateBook, patchBooks, saveQuote, updateQuote, deleteQuote,
-    syncState, runSync, loadSamples, removeSamples, hasSamples, previewImport, applyImport,
+    syncState, runSync, unsynced, lastSync, loadSamples, removeSamples, hasSamples, previewImport, applyImport,
   }
 }
 

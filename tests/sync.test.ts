@@ -1,4 +1,4 @@
-import { sync, merge } from '../src/sync.ts'
+import { sync, merge, explainSyncError, GitHubError } from '../src/sync.ts'
 import assert from 'node:assert'
 
 // Fake GitHub contents API
@@ -39,4 +39,19 @@ assert.equal(puts, before)
 // Remote decodes as UTF-8 Gujarati
 const raw = new TextDecoder().decode(Uint8Array.from(atob(file!.content), (c) => c.charCodeAt(0)))
 assert.ok(raw.includes('કર્મણ્યેવાધિકારસ્તે'))
+
+// Failures say what to do, and only passing troubles are retried
+const where = { owner: 'me', repo: 'commonplace-data' }
+const gh = (status: number, msg = '') => explainSyncError(new GitHubError(status, `GitHub ${status}: ${msg}`), where)
+assert.equal(gh(401).retry, false)
+assert.match(gh(401).message, /token/)
+assert.match(gh(403, 'Resource not accessible').message, /me\/commonplace-data/)
+assert.equal(gh(403, 'Resource not accessible').retry, false)
+assert.equal(gh(403, 'API rate limit exceeded').retry, true)
+assert.equal(gh(404).retry, false)
+assert.equal(gh(502).retry, true)
+assert.deepEqual(explainSyncError(new TypeError('Failed to fetch'), where, false), { message: 'Offline', retry: true, offline: true })
+assert.equal(explainSyncError(new TypeError('Failed to fetch'), where, true).retry, true)
+assert.equal(explainSyncError(new Error('Sync conflict: please try again'), where).retry, true)
+
 console.log('sync tests passed; commits:', puts)

@@ -386,6 +386,25 @@ const importSummary = (plan: ImportPlan) =>
     .filter(Boolean)
     .join(' and ') || `details for ${plural(plan.books.length, 'book')}`
 
+/** "3 changes not backed up yet · last synced 2 days ago" */
+function syncBacklog(unsynced: number, lastSync: number): string {
+  const parts: string[] = []
+  if (unsynced) parts.push(`${unsynced} ${unsynced === 1 ? 'change' : 'changes'} not backed up yet`)
+  if (lastSync) parts.push(`last synced ${ago(lastSync)}`)
+  else parts.push('never synced from this device')
+  const text = parts.join(' · ')
+  return text[0].toUpperCase() + text.slice(1)
+}
+
+function ago(t: number): string {
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const mins = Math.round((t - Date.now()) / 60_000)
+  if (mins > -60) return mins > -1 ? 'just now' : rtf.format(mins, 'minute')
+  const hours = Math.round(mins / 60)
+  if (hours > -24) return rtf.format(hours, 'hour')
+  return rtf.format(Math.round(hours / 24), 'day')
+}
+
 function OfflineGroup() {
   const offline = useOfflineState()
   if (offline === 'unsupported') return null
@@ -461,14 +480,18 @@ export function Settings({ store }: { store: Store }) {
 
   const [backedUp, setBackedUp] = useState(() => Number(localStorage.getItem(BACKUP_KEY)) || 0)
   const s = store.syncState
+  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const status =
     s.kind === 'off'
       ? 'Off — stored on this device only'
       : s.kind === 'syncing'
         ? 'Syncing…'
         : s.kind === 'ok'
-          ? `Up to date${s.at ? ` · ${new Date(s.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}`
-          : s.message
+          ? `Up to date${s.at ? ` · ${time(s.at)}` : ''}`
+          : s.kind === 'offline'
+            ? "Offline — syncs when you're back online"
+            : s.message
+  const waiting = s.kind === 'offline' || s.kind === 'error' ? syncBacklog(store.unsynced, store.lastSync) : ''
 
   return (
     <Page title="Settings" back="#/">
@@ -482,6 +505,7 @@ export function Settings({ store }: { store: Store }) {
         }
       >
         <Row label="Status" value={<span className={`status ${s.kind}`}>{status}</span>} />
+        {waiting && <p className="row sync-backlog">{waiting}</p>}
         <Row label="Username">
           <input className="row-input" placeholder="octocat" value={cfg.owner} onChange={set('owner')} autoCapitalize="off" autoCorrect="off" />
         </Row>

@@ -23,7 +23,7 @@ export function saveSyncConfig(cfg: SyncConfig | null) {
   else localStorage.removeItem(CONFIG_KEY)
 }
 
-class GitHubError extends Error {
+export class GitHubError extends Error {
   status: number
   constructor(status: number, message: string) {
     super(message)
@@ -125,6 +125,34 @@ export async function sync(cfg: SyncConfig, local: Collection): Promise<Collecti
     }
   }
   throw new Error('Sync conflict: please try again')
+}
+
+export interface SyncProblem {
+  /** What went wrong, in words that say what to do about it. */
+  message: string
+  /** Worth trying again by itself later (the network, GitHub having a bad moment). */
+  retry: boolean
+  /** No connection at all: not really a failure, just wait. */
+  offline?: boolean
+}
+
+/** Turn a failed sync into something you can act on. */
+export function explainSyncError(e: unknown, cfg: Pick<SyncConfig, 'owner' | 'repo'>, online = true): SyncProblem {
+  const repo = `${cfg.owner}/${cfg.repo}`
+  if (!(e instanceof GitHubError)) {
+    if (!online) return { message: 'Offline', retry: true, offline: true }
+    if (e instanceof TypeError) return { message: "Couldn't reach GitHub. Trying again shortly.", retry: true }
+    const msg = (e as Error)?.message || String(e)
+    return { message: msg, retry: /conflict/i.test(msg) }
+  }
+  if (e.status === 401) return { message: "GitHub didn't accept the token. It may have expired: make a new one and save it below.", retry: false }
+  if (e.status === 403 || e.status === 429) {
+    if (/rate limit/i.test(e.message) || e.status === 429) return { message: 'GitHub is limiting requests for now. Trying again shortly.', retry: true }
+    return { message: `The token can't write to ${repo}. Give it Contents: Read and write.`, retry: false }
+  }
+  if (e.status === 404) return { message: `Couldn't find ${repo}. Check the username and repository, and that the token can see it.`, retry: false }
+  if (e.status >= 500) return { message: 'GitHub is having trouble. Trying again shortly.', retry: true }
+  return { message: e.message, retry: false }
 }
 
 /** Quick check that the token can see the repo. */
