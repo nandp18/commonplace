@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CaptureButton, EditableQuote, go, QuoteFields, Segmented, Sheet } from './components'
 import { fileIntoSea } from './drop'
 import { haptic } from './motion'
 import { PageArt } from './screens'
-import { formatSelection, readsAsEnglish } from './format'
+import { formatSelection, isGujarati, readsAsEnglish } from './format'
 import { Icon } from './icons'
 import { readPage, readQuality, readRegion, rereadSelection, warmUp, WRONG_LANGUAGE } from './ocr'
 import { PageSelect } from './PageSelect'
@@ -32,6 +32,7 @@ export function Capture({ store }: { store: Store }) {
     setStrokeState(p)
   }
   const readRun = useRef(0)
+  const [scanRun, setScanRun] = useState(0)
   const [detecting, setDetecting] = useState<Lang | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<{ id: string; uncertain: string[] } | null>(null)
@@ -70,6 +71,7 @@ export function Capture({ store }: { store: Store }) {
     if (!imgEl.current) return
     const run = ++readRun.current
     const live = () => run === readRun.current
+    setScanRun(run)
     setReading(true)
     setFailed(null)
     setWords(null)
@@ -157,36 +159,29 @@ export function Capture({ store }: { store: Store }) {
 
   const savedQuote = saved ? store.quotes.find((q) => q.id === saved.id) : undefined
   const canSave = !saving && (!!range || (!!stroke && !reading))
+  const status = `${detecting ? `Trying ${detecting === 'guj' ? 'ગુજરાતી' : 'English'}` : 'Reading the page'}${progress > 0.02 ? ` · ${Math.round(progress * 100)}%` : '…'}`
   const hint = failed
     ? failed
-    : range
-      ? 'Selected'
-      : stroke && reading
-        ? 'Got it — finishing the page'
+    : stroke && reading
+      ? 'Got it — finishing the page'
+      : reading
+        ? status
         : words?.length === 0
           ? 'No text found — circle the passage to read that area'
-          : 'Highlight or circle the passage'
+          : 'Tap a sentence, or run your finger over the lines'
+  const clear = () => {
+    setRange(null)
+    setStroke(null)
+    haptic('tick')
+  }
 
   return (
-    <div className="capture">
-      <header className="capture-top">
-        <div className="navbar-side">
-          <button className="capture-text-button" onClick={() => go('/')}>
-            Cancel
-          </button>
-        </div>
-        <div className="capture-title">Quote</div>
-        <div className="navbar-side end">
-          <Segmented value={lang} options={LANGS_SHORT} onChange={switchLang} className="dark" />
-        </div>
-      </header>
-
+    <div className={`capture ${reading ? 'is-reading' : ''}`}>
       <PageSelect
         src={src}
         words={words}
         reading={reading}
-        status={detecting ? `Trying ${detecting === 'guj' ? 'ગુજરાતી' : 'English'}` : 'Reading page'}
-        progress={progress}
+        run={scanRun}
         pendingStroke={!range ? stroke : null}
         range={range}
         onImage={(el) => {
@@ -197,14 +192,30 @@ export function Capture({ store }: { store: Store }) {
         onStroke={setStroke}
       />
 
-      <footer className="capture-bottom">
-        <p className={`capture-hint ${failed ? 'error' : ''} ${range ? 'selected' : ''}`}>{hint}</p>
-        <button className="light-button wide" disabled={!canSave} onClick={save}>
-          {saving ? 'Filing…' : 'Use this passage'}
+      <header className="capture-top">
+        <button className="capture-round" aria-label="Cancel" onClick={() => go('/')}>
+          <Icon name="close" size={18} />
         </button>
-        <CaptureButton className="capture-text-button small">
-          <Icon name="retake" size={16} /> Retake
-        </CaptureButton>
+        <Segmented value={lang} options={LANGS_SHORT} onChange={switchLang} className="dark" />
+      </header>
+
+      <footer className="capture-tray">
+        {words && range ? (
+          <Preview words={words} range={range} onClear={clear} />
+        ) : (
+          <p className={`capture-hint ${failed ? 'error' : ''}`}>
+            {reading && !failed && <span className="spinner" />}
+            {hint}
+          </p>
+        )}
+        <div className="tray-actions">
+          <CaptureButton className="capture-round" camera>
+            <Icon name="retake" size={18} />
+          </CaptureButton>
+          <button className="light-button wide" disabled={!canSave} onClick={save}>
+            {saving ? 'Filing…' : 'Save quote'}
+          </button>
+        </div>
       </footer>
 
       <Sheet open={!!savedQuote} onClose={() => go(`/?new=${saved?.id}`)}>
@@ -252,6 +263,25 @@ export function Capture({ store }: { store: Store }) {
           </div>
         )}
       </Sheet>
+    </div>
+  )
+}
+
+/** What you're about to keep, as text, while you choose it. */
+function Preview({ words, range, onClear }: { words: OcrWord[]; range: Range; onClear: () => void }) {
+  const text = useMemo(() => formatSelection(words, range).text, [words, range])
+  const count = range[1] - range[0] + 1
+  return (
+    <div className="tray-preview">
+      <p className={`tray-quote ${isGujarati(text) ? 'gu' : ''}`}>{text}</p>
+      <div className="tray-meta">
+        <span>
+          {count} {count === 1 ? 'word' : 'words'} · tap another sentence to add it
+        </span>
+        <button className="tray-clear" onClick={onClear}>
+          Clear
+        </button>
+      </div>
     </div>
   )
 }

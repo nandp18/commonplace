@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { haptic, reducedMotion } from './motion'
-import { lineHeight, nearestWord, selectRange, type OcrWord, type Pt, type Range } from './selection'
+import { ScanVeil } from './ScanVeil'
+import { extendTo, lineHeight, nearestWord, selectRange, sentenceAt, wordAt, type OcrWord, type Pt, type Range } from './selection'
 
 interface Props {
   src: string
   words: OcrWord[] | null
   reading: boolean
-  status: string
-  progress: number
+  /** Bumped for each read of the page, to start the scan animation over. */
+  run: number
   /** A gesture made before the words were ready; shown until it can snap. */
   pendingStroke: Pt[] | null
   range: Range | null
@@ -23,11 +24,17 @@ const HANDLE = '#3478F6'
 
 type Mode = 'none' | 'draw' | 'pinch' | 'start' | 'end'
 
+/** Movement (screen px) before a touch counts as drawing rather than a tap. */
+const TAP_SLOP = 9
+const LOUPE = 128
+const LOUPE_ZOOM = 2.2
+
 /**
- * The photo, with a highlighter. Draw any rough loop or swipe; the selection snaps to
- * whole words. Drag the handles to adjust. Pinch to zoom in on small print.
+ * The photo, full screen, with a highlighter. Tap a sentence to select it, tap another to
+ * reach to it, or draw any rough loop or swipe; the selection snaps to whole words.
+ * Drag the handles to adjust, with a magnifier under your finger. Pinch to zoom in on small print.
  */
-export function PageSelect({ src, words, reading, status, progress, pendingStroke, range, onImage, onRange, onStroke }: Props) {
+export function PageSelect({ src, words, reading, run, pendingStroke, range, onImage, onRange, onStroke }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
   const img = useRef<HTMLImageElement>(null)
@@ -39,7 +46,10 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
   const stroke = useRef<Pt[]>([]) // display px (unzoomed)
   const pinch0 = useRef({ d: 1, mid: { x: 0, y: 0 }, s: 1, tx: 0, ty: 0 })
   const beforeDraw = useRef<Range | null>(null)
-  const shimmer = useRef(0)
+  const down = useRef({ x: 0, y: 0, at: 0, moved: false })
+  const loupe = useRef<HTMLCanvasElement>(null)
+  const [loupeAt, setLoupeAt] = useState<Pt | null>(null)
+  const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null)
   /** The finished stroke melting away as the highlight settles. */
   const fading = useRef<{ pts: Pt[]; a: number } | null>(null)
   const live = useRef({ words, range, pendingStroke })
@@ -58,12 +68,6 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
     const { words, range } = live.current
     const kk = k()
     const s = view.current.s
-
-    // "I can see the text": a brief glow over every word when the page read finishes.
-    if (words && shimmer.current > 0) {
-      ctx.fillStyle = `rgba(112, 148, 236, ${0.3 * shimmer.current})`
-      for (const w of words) ctx.fillRect(w.x0 / kk, w.y0 / kk, (w.x1 - w.x0) / kk, (w.y1 - w.y0) / kk)
-    }
 
     ctx.globalCompositeOperation = 'multiply'
     if (words && range) {
@@ -107,7 +111,7 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
     // Selection handles, iOS style: a stem with a knob.
     if (words && range && mode.current !== 'draw') {
       const a = words[range[0]], b = words[range[1]]
-      const r = 5.5 / s
+      const r = 6 / s
       ctx.fillStyle = ctx.strokeStyle = HANDLE
       ctx.lineWidth = 2 / s
       const pad = (a.y1 - a.y0) * 0.14
@@ -144,21 +148,6 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
 
   useEffect(redraw, [range, pendingStroke, redraw])
 
-  // Shimmer once when words arrive.
-  useEffect(() => {
-    if (!words?.length) return
-    let raf = 0
-    const t0 = performance.now()
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / 900)
-      shimmer.current = Math.sin(p * Math.PI)
-      redraw()
-      if (p < 1) raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [words, redraw])
-
   const applyView = () => {
     const { s, tx, ty } = view.current
     if (inner.current) inner.current.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`
@@ -175,12 +164,37 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
   const handleAt = (p: Pt): Mode | null => {
     const { words, range } = live.current
     if (!words || !range) return null
-    const kk = k(), reach = 26 / view.current.s
+    const kk = k(), s = view.current.s, reach = 34 / s, r = 6 / s
     const a = words[range[0]], b = words[range[1]]
-    const da = Math.hypot(p.x - a.x0 / kk, p.y - a.y0 / kk)
-    const db = Math.hypot(p.x - b.x1 / kk, p.y - b.y1 / kk)
+    const pa = (a.y1 - a.y0) * 0.14, pb = (b.y1 - b.y0) * 0.14
+    // Measured to the knobs, and to the middle of the stems.
+    const da = Math.min(Math.hypot(p.x - (a.x0 - pa) / kk, p.y - ((a.y0 - pa) / kk - r)), Math.hypot(p.x - (a.x0 - pa) / kk, p.y - (a.y0 + a.y1) / 2 / kk))
+    const db = Math.min(Math.hypot(p.x - (b.x1 + pb) / kk, p.y - ((b.y1 + pb) / kk + r)), Math.hypot(p.x - (b.x1 + pb) / kk, p.y - (b.y0 + b.y1) / 2 / kk))
     if (Math.min(da, db) > reach) return null
     return da <= db ? 'start' : 'end'
+  }
+
+  /** A magnifier above the finger, so you can see the words you're touching. */
+  const showLoupe = (e: { clientX: number; clientY: number }) => {
+    const el = img.current, overlay = canvas.current, out = loupe.current
+    if (!el || !overlay || !out) return
+    const p = local(e)
+    const kk = k()
+    // The loupe shows LOUPE_ZOOM times what's on screen now.
+    const span = LOUPE / (view.current.s * LOUPE_ZOOM) // display px
+    const dpr = Math.min(window.devicePixelRatio || 1, 3)
+    if (out.width !== LOUPE * dpr) out.width = out.height = LOUPE * dpr
+    const g = out.getContext('2d')!
+    g.fillStyle = '#111'
+    g.fillRect(0, 0, out.width, out.height)
+    const sx = p.x - span / 2, sy = p.y - span / 2
+    g.drawImage(el, sx * kk, sy * kk, span * kk, span * kk, 0, 0, out.width, out.height)
+    const ratio = overlay.width / el.clientWidth
+    g.globalCompositeOperation = 'multiply'
+    g.drawImage(overlay, sx * ratio, sy * ratio, span * ratio, span * ratio, 0, 0, out.width, out.height)
+    g.globalCompositeOperation = 'source-over'
+    const host = stage.current!.parentElement!.getBoundingClientRect()
+    setLoupeAt({ x: e.clientX - host.left, y: e.clientY - host.top })
   }
 
   const onDown = (e: React.PointerEvent) => {
@@ -209,6 +223,7 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
     mode.current = 'draw'
     beforeDraw.current = live.current.range
     stroke.current = [p]
+    down.current = { x: e.clientX, y: e.clientY, at: performance.now(), moved: false }
   }
 
   const onMove = (e: React.PointerEvent) => {
@@ -238,8 +253,12 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
 
     if (mode.current === 'draw') {
       stroke.current.push(local(e))
+      // Wait until it's clearly a stroke, so a tap doesn't flash a selection.
+      if (!down.current.moved && Math.hypot(e.clientX - down.current.x, e.clientY - down.current.y) > TAP_SLOP) down.current.moved = true
+      if (!down.current.moved) return
       if (words && stroke.current.length > 2) onRange(selectRange(words, stroke.current.map(toPhoto)))
       redraw()
+      showLoupe(e)
     } else if ((mode.current === 'start' || mode.current === 'end') && words && range) {
       const i = nearestWord(words, toPhoto(local(e)))
       const next: Range = mode.current === 'start' ? [Math.min(i, range[1]), range[1]] : [range[0], Math.max(i, range[0])]
@@ -247,16 +266,40 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
         haptic('tick') // a tick per word, like iOS text selection
         onRange(next)
       }
+      showLoupe(e)
     }
+  }
+
+  /** Tap a word: select its sentence. With a selection, tap another sentence to reach to it, or the margin to clear. */
+  const tap = (p: Pt | undefined) => {
+    const words = live.current.words
+    if (!p || !words?.length) return
+    const i = wordAt(words, p, lineHeight(words) * 0.6)
+    const current = live.current.range
+    if (i === null) {
+      if (current) {
+        onRange(null)
+        onStroke(null)
+        haptic('tick')
+      }
+      return
+    }
+    const next = current ? extendTo(words, current, i) : sentenceAt(words, i)
+    onStroke(null)
+    onRange(next)
+    haptic('tap')
   }
 
   const onUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId)
+    setLoupeAt(null)
     if (mode.current === 'draw') {
       const pts = stroke.current.map(toPhoto)
       stroke.current = []
-      if (pts.length < 3) {
-        onRange(beforeDraw.current) // a tap, not a gesture
+      if (!down.current.moved) {
+        tap(pts[0])
+      } else if (pts.length < 3) {
+        onRange(beforeDraw.current)
       } else {
         onStroke(pts)
         const words = live.current.words
@@ -306,24 +349,22 @@ export function PageSelect({ src, words, reading, status, progress, pendingStrok
             alt="Page"
             draggable={false}
             onLoad={(e) => {
+              setImgEl(e.currentTarget)
               onImage(e.currentTarget)
               fit()
             }}
           />
           <canvas ref={canvas} />
+          <ScanVeil img={imgEl} run={run} reading={reading} words={words} />
         </div>
-        {reading && (
-          <div className="scan" aria-hidden>
-            <div className="scan-beam" />
-          </div>
-        )}
-        {reading && (
-          <div className="stage-status">
-            <span className="spinner" /> {status}
-            {progress > 0.02 ? ` · ${Math.round(progress * 100)}%` : '…'}
-          </div>
-        )}
       </div>
+      <canvas
+        ref={loupe}
+        className={`loupe ${loupeAt ? 'on' : ''}`}
+        // Above the finger, or below it near the top of the screen.
+        style={loupeAt ? { left: loupeAt.x, top: loupeAt.y < 220 ? loupeAt.y + 260 : loupeAt.y } : undefined}
+        aria-hidden
+      />
     </div>
   )
 }

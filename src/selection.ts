@@ -230,3 +230,25 @@ export function detectPageNumber(words: OcrWord[]): string | undefined {
   }
   return undefined
 }
+
+/** The word under a point, if it's on one (with a little slack for fingers); otherwise null. */
+export function wordAt(words: OcrWord[], p: Pt, slack: number): number | null {
+  const i = nearestWord(words, p)
+  return words.length && distToBox(p, words[i]) <= slack ? i : null
+}
+
+/** The whole sentence a word sits in, kept within its paragraph. */
+export function sentenceAt(words: OcrWord[], i: number, cap = 80): Range {
+  let s = i
+  while (s > 0 && i - s < cap && !startsSentence(words, s)) s--
+  let e = i
+  while (e < words.length - 1 && e - i < cap && !endsSentence(words[e]) && words[e + 1].para === words[i].para) e++
+  return [s, e]
+}
+
+/** Grow a selection to take in the sentence of a tapped word outside it. Taps inside leave it as is. */
+export function extendTo(words: OcrWord[], [s, e]: Range, i: number): Range {
+  if (i >= s && i <= e) return [s, e]
+  const [ss, se] = sentenceAt(words, i)
+  return i < s ? [ss, e] : [s, se]
+}

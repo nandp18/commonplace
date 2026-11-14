@@ -572,42 +572,71 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
 
 /* ───────────── Capture (the dark room) ───────────── */
 
-.capture { height: 100dvh; display: flex; flex-direction: column; background: #0b0b0a; color: #fff; }
+.capture { position: fixed; inset: 0; overflow: hidden; background: #070706; color: #fff; }
+/* Controls float over the photo, on soft scrims so they stay readable on a bright page. */
 .capture-top {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-  padding: calc(10px + var(--top)) 20px 8px; flex: none;
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2; pointer-events: none;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(10px + var(--top)) 16px 28px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent);
 }
-.capture-title { font-size: 19px; font-weight: 600; }
+.capture-top > * { pointer-events: auto; }
+.capture-round {
+  width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: #fff;
+  background: rgba(30, 30, 28, 0.55); -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  transition: transform 0.3s var(--spring);
+}
+.capture-round:active { transform: scale(0.92); }
 .capture-text-button { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; color: rgba(255, 255, 255, 0.92); padding: 8px 0; cursor: pointer; }
-.capture-text-button.small { font-size: 15px; color: rgba(255, 255, 255, 0.55); align-self: center; padding: 4px 8px; }
-.page-select { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 10px 28px 0; }
+
+.page-select { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .stage {
-  position: relative; overflow: hidden; touch-action: none; border-radius: 14px;
-  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.9), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  position: relative; touch-action: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  animation: develop 0.9s var(--spring) both;
+}
+/* The photo comes up like a print in the tray: from soft and bright to sharp. */
+@keyframes develop {
+  from { opacity: 0; transform: scale(1.06); filter: blur(10px) brightness(1.6); }
 }
 .stage-inner { position: relative; transform-origin: 0 0; line-height: 0; will-change: transform; }
-.stage img { display: block; max-width: calc(100vw - 56px); max-height: calc(100dvh - var(--top) - var(--bottom) - 250px); transition: filter 0.6s; }
-.stage.reading img { filter: brightness(0.9) saturate(0.8); }
+.stage img { display: block; max-width: 100vw; max-height: 100dvh; transition: filter 0.8s var(--spring); }
+.capture.is-reading .stage img { filter: brightness(0.26) saturate(0.4) contrast(1.15); }
 .stage canvas { position: absolute; inset: 0; pointer-events: none; }
-.scan { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.scan-beam {
-  position: absolute; left: 0; right: 0; height: 30%; top: -30%;
-  background: linear-gradient(180deg, transparent, rgba(140, 170, 245, 0.12) 75%, rgba(170, 195, 255, 0.5) 99%, transparent);
-  animation: scan 2.2s var(--spring) infinite;
+.scan-veil { mix-blend-mode: screen; }
+
+.loupe {
+  position: absolute; z-index: 3; width: 128px; height: 128px; margin: -190px 0 0 -64px; border-radius: 50%;
+  pointer-events: none; opacity: 0; transform: scale(0.6) translateY(40px);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 12px 30px rgba(0, 0, 0, 0.55);
+  transition: opacity 0.15s, transform 0.25s var(--spring);
 }
-.stage-status {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px; white-space: nowrap; line-height: 1;
-  padding: 9px 15px; border-radius: 99px; font-size: 13px; font-weight: 500; color: #fff;
-  background: rgba(20, 20, 18, 0.6); -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%);
-  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+.loupe.on { opacity: 1; transform: none; }
+
+.capture-tray {
+  position: absolute; left: 10px; right: 10px; bottom: calc(10px + var(--bottom)); z-index: 2;
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 14px 12px; border-radius: 30px;
+  background: rgba(22, 22, 20, 0.66); -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 20px 50px -10px rgba(0, 0, 0, 0.7);
 }
-.spinner { width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.2); border-top-color: #fff; animation: spin 0.8s linear infinite; }
-.capture-bottom { flex: none; padding: 14px 22px calc(12px + var(--bottom)); display: flex; flex-direction: column; gap: 14px; }
-.capture-hint { text-align: center; font-size: 15px; color: rgba(255, 255, 255, 0.5); min-height: 20px; transition: color 0.3s; }
-.capture-hint.selected { color: rgba(255, 255, 255, 0.75); }
+.tray-actions { display: flex; gap: 10px; align-items: center; }
+.tray-actions .light-button { flex: 1; height: 52px; }
+.capture-hint {
+  display: flex; align-items: center; justify-content: center; gap: 9px; text-align: center;
+  font-size: 15px; color: rgba(255, 255, 255, 0.7); min-height: 22px; padding: 2px 8px 0;
+}
 .capture-hint.error { color: #ff8a75; }
+.tray-preview { display: flex; flex-direction: column; gap: 8px; padding: 2px 6px 0; animation: tray-in 0.35s var(--spring); }
+@keyframes tray-in { from { opacity: 0; transform: translateY(6px); } }
+.tray-quote {
+  margin: 0; font: 16.5px/1.45 var(--serif); color: #fff; max-height: calc(16.5px * 1.45 * 3); overflow-y: auto; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent); mask-image: linear-gradient(180deg, #000 80%, transparent);
+}
+.tray-quote::-webkit-scrollbar { display: none; }
+.tray-quote.gu { font-family: var(--sans); line-height: 1.6; }
+.tray-meta { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: rgba(255, 255, 255, 0.5); }
+.tray-clear { color: #f0c869; font-size: 14px; font-weight: 500; padding: 4px 2px; cursor: pointer; }
 
 .pick {
   min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
@@ -645,7 +674,6 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
 
 @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(0.985); } }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes scan { to { top: 100%; } }
 @keyframes sweep {
   0% { transform: scaleX(0); }
   30%, 80% { transform: scaleX(1); opacity: 1; }
