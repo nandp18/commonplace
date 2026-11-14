@@ -6,6 +6,7 @@ See [PRD.md](PRD.md) for the product spec.
 
 - **Static site** for GitHub Pages (Vite + React + TypeScript)
 - **OCR in the browser** with Tesseract.js (English and the Gujarati script model; Gujarati pages are also read flattened and the better read is kept). Models download once from jsDelivr and are cached
+- **Works offline**: a service worker keeps the app and both OCR readers on the phone after the first visit (Settings → Offline shows when it's ready)
 - **Storage** in IndexedDB, with optional sync to `quotes.json` in a private GitHub repo
 
 ## Develop
@@ -49,6 +50,8 @@ Page photos go to Datalab when this is on. The Worker asks Datalab to delete eac
 | `src/chandra.ts` | Sends Gujarati pages to Chandra and turns the result into positioned words |
 | `worker/chandra-proxy.js` | Cloudflare Worker between the app and Datalab |
 | `src/flatten.ts` | Measures page tilt and curve, and maps word positions back to the photo |
+| `sw/sw.js` | Service worker; the build adds the file list (see `offline()` in `vite.config.ts`) |
+| `src/offline.ts` | Registers the service worker and loads the OCR readers once so they're kept |
 | `src/store.ts` | App state, IndexedDB, background sync |
 | `src/sync.ts` | GitHub Contents API sync with last-write-wins merge |
 | `src/util.ts` | Search, quote of the day, Markdown/CSV export |

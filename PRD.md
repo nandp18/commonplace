@@ -111,7 +111,6 @@ Quote { id, bookId?, text, page?, tags: string[], note?, lang: 'eng'|'guj'|'eng+
 - Storing the original photo or crop. Only the text is kept.
 - Accounts or multi-user support.
 - Kindle or Goodreads import.
-- Fully offline capture (OCR models and the app shell aren't cached by a service worker yet).
 - Spaced-repetition review, email or push reminders.
 - Cleaning up OCR text with an AI model.
 
@@ -133,4 +132,4 @@ Quote { id, bookId?, text, page?, tags: string[], note?, lang: 'eng'|'guj'|'eng+
 
 ## 10. Future (v1+)
 
-Service worker for full offline use · keep the image crop · highlight auto-detection · AI-assisted OCR correction · daily quote email or widget · share a quote as an image card · Kindle import.
+keep the image crop · highlight auto-detection · AI-assisted OCR correction · daily quote email or widget · share a quote as an image card · Kindle import.

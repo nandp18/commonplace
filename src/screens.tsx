@@ -30,6 +30,7 @@ import { currentBookId, type Store } from './store'
 import { loadSyncConfig, saveSyncConfig, testConfig, type SyncConfig } from './sync'
 import type { Lang } from './types'
 import { isSample } from './samples'
+import { useOfflineState } from './offline'
 import { byPage, download, toBackup, toCsv, toMarkdown } from './util'
 
 const BACKUP_KEY = 'commonplace.lastBackup'
@@ -385,6 +386,24 @@ const importSummary = (plan: ImportPlan) =>
     .filter(Boolean)
     .join(' and ') || `details for ${plural(plan.books.length, 'book')}`
 
+function OfflineGroup() {
+  const offline = useOfflineState()
+  if (offline === 'unsupported') return null
+  const status = {
+    preparing: 'Getting ready…',
+    ready: 'Ready',
+    failed: 'Not ready yet — open the app once with a connection',
+  }[offline]
+  return (
+    <Group
+      header="Offline"
+      footer="The app and its English and ગુજરાતી readers stay on this device, so you can capture with no signal. Gujarati pages are read on the device when offline, and quotes sync the next time you're online."
+    >
+      <Row label="Status" value={<span className={`status ${offline === 'ready' ? 'ok' : offline === 'failed' ? 'error' : 'syncing'}`}>{status}</span>} />
+    </Group>
+  )
+}
+
 export function Settings({ store }: { store: Store }) {
   const existing = loadSyncConfig()
   const [cfg, setCfg] = useState<SyncConfig>(existing ?? { owner: '', repo: 'commonplace-data', path: 'quotes.json', token: '' })
@@ -514,6 +533,8 @@ export function Settings({ store }: { store: Store }) {
           </ol>
         </details>
       </Group>
+
+      <OfflineGroup />
 
       <Group
         header="Sample library"

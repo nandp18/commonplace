@@ -1,4 +1,6 @@
-import { createWorker, PSM, type Worker } from 'tesseract.js'
+import { createWorker, PSM, type Worker, type WorkerOptions } from 'tesseract.js'
+// Served from our own site (not jsDelivr) so the service worker can see what the reader loads and keep it offline.
+import workerPath from 'tesseract.js/dist/worker.min.js?url'
 import { readWithChandra } from './chandra'
 import { applyWarp, findSkew, inkFrom, mapWords, measureWarp, preferFlat, unflatten } from './flatten'
 import { reflow, tidy } from './format'
@@ -20,14 +22,18 @@ let onProgress: Progress | null = null
 /** Scored better on real book photos than the default `guj` model (93% of words vs 90%, with flattening). */
 const GUJARATI_MODEL = 'https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@4.1.0/script'
 
+function spawn(lang: Lang, options: Partial<WorkerOptions> = {}): Promise<Worker> {
+  const base = { workerPath, workerBlobURL: false, ...options }
+  return lang === 'guj'
+    ? createWorker(['Gujarati'], 1, { ...base, langPath: GUJARATI_MODEL, gzip: false })
+    : createWorker(lang.split('+'), 1, base)
+}
+
 function getWorker(lang: Lang): Promise<Worker> {
   let w = workers.get(lang)
   if (!w) {
     const logger = (m: { status: string; progress: number }) => m.status === 'recognizing text' && onProgress?.(m.progress)
-    w =
-      lang === 'guj'
-        ? createWorker(['Gujarati'], 1, { logger, langPath: GUJARATI_MODEL, gzip: false })
-        : createWorker(lang.split('+'), 1, { logger })
+    w = spawn(lang, { logger })
     w.catch(() => workers.delete(lang))
     workers.set(lang, w)
   }
@@ -37,6 +43,17 @@ function getWorker(lang: Lang): Promise<Worker> {
 /** Start downloading the model early so the first read feels fast. */
 export function warmUp(lang: Lang) {
   getWorker(lang).catch(() => {})
+}
+
+/**
+ * Load both readers once so the service worker keeps them, then let them go.
+ * After this, English and Gujarati capture work with no connection.
+ */
+export async function prepareOffline(): Promise<void> {
+  for (const lang of ['eng', 'guj'] as const) {
+    const w = await spawn(lang)
+    await w.terminate()
+  }
 }
 
 /**
