@@ -155,11 +155,13 @@ export function Capture({ store }: { store: Store }) {
     setSaved(null)
   }
 
+  const phrase = useCycle(READING_WORDS, 2200, reading && !detecting)
+
   if (!src) return <PickPhoto />
 
   const savedQuote = saved ? store.quotes.find((q) => q.id === saved.id) : undefined
   const canSave = !saving && (!!range || (!!stroke && !reading))
-  const status = `${detecting ? `Trying ${detecting === 'guj' ? 'ગુજરાતી' : 'English'}` : 'Reading the page'}${progress > 0.02 ? ` · ${Math.round(progress * 100)}%` : '…'}`
+  const status = detecting ? `Trying ${detecting === 'guj' ? 'ગુજરાતી' : 'English'}…` : phrase
   const hint = failed
     ? failed
     : stroke && reading
@@ -203,9 +205,17 @@ export function Capture({ store }: { store: Store }) {
         {words && range ? (
           <Preview words={words} range={range} onClear={clear} />
         ) : (
-          <p className={`capture-hint ${failed ? 'error' : ''}`}>
-            {reading && !failed && <span className="spinner" />}
-            {hint}
+          <p className={`capture-hint ${failed ? 'error' : ''} ${reading && !failed && !stroke ? 'magic' : ''}`}>
+            {reading && !failed && !stroke ? (
+              <>
+                <span key={hint} className="magic-words">
+                  {hint}
+                </span>
+                <span className="magic-progress" style={{ ['--p' as string]: progress }} />
+              </>
+            ) : (
+              hint
+            )}
           </p>
         )}
         <div className="tray-actions">
@@ -265,6 +275,20 @@ export function Capture({ store }: { store: Store }) {
       </Sheet>
     </div>
   )
+}
+
+const READING_WORDS = ['Finding the lines…', 'Reading every word…', 'Gathering the ink…', 'Listening to the page…', 'Almost there…']
+
+/** Steps through phrases while `active`, starting over each time it begins. */
+function useCycle(phrases: string[], ms: number, active: boolean): string {
+  const [i, setI] = useState(0)
+  useEffect(() => {
+    if (!active) return
+    setI(0)
+    const id = setInterval(() => setI((n) => Math.min(n + 1, phrases.length - 1)), ms)
+    return () => clearInterval(id)
+  }, [active, phrases, ms])
+  return phrases[i]
 }
 
 /** What you're about to keep, as text, while you choose it. */

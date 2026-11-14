@@ -336,7 +336,7 @@ export function PageSelect({ src, words, reading, run, pendingStroke, range, onI
     <div className="page-select">
       <div
         ref={stage}
-        className={`stage ${reading ? 'reading' : ''}`}
+        className={`stage ${reading ? 'reading' : ''} ${imgEl ? 'loaded' : ''}`}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}

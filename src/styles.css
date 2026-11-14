@@ -594,17 +594,24 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
 .stage {
   position: relative; touch-action: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-  animation: develop 0.9s var(--spring) both;
+  opacity: 0;
 }
+.stage.loaded { opacity: 1; animation: develop 1.1s var(--spring) both; }
 /* The photo comes up like a print in the tray: from soft and bright to sharp. */
 @keyframes develop {
   from { opacity: 0; transform: scale(1.06); filter: blur(10px) brightness(1.6); }
 }
 .stage-inner { position: relative; transform-origin: 0 0; line-height: 0; will-change: transform; }
 .stage img { display: block; max-width: 100vw; max-height: 100dvh; transition: filter 0.8s var(--spring); }
-.capture.is-reading .stage img { filter: brightness(0.26) saturate(0.4) contrast(1.15); }
+.capture.is-reading .stage img { filter: brightness(0.16) saturate(0.3) contrast(1.2); }
 .stage canvas { position: absolute; inset: 0; pointer-events: none; }
 .scan-veil { mix-blend-mode: screen; }
+.scan-paper {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.7s;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.5) 0.6px, transparent 0.9px) calc(var(--gap) / 2) calc(var(--gap) / 2) / var(--gap) var(--gap);
+}
+.scan-paper.on { opacity: 0.22; }
+.scan-bloom { mix-blend-mode: screen; filter: blur(7px) saturate(1.3); opacity: 0.9; }
 
 .loupe {
   position: absolute; z-index: 3; width: 128px; height: 128px; margin: -190px 0 0 -64px; border-radius: 50%;
@@ -627,6 +634,23 @@ html.ocean-open, html.ocean-open body { overflow: hidden; overscroll-behavior: n
   font-size: 15px; color: rgba(255, 255, 255, 0.7); min-height: 22px; padding: 2px 8px 0;
 }
 .capture-hint.error { color: #ff8a75; }
+/* While reading: the words shimmer gold, and each new phrase rises in. */
+.capture-hint.magic { flex-direction: column; gap: 10px; padding-top: 4px; }
+.magic-words {
+  font: italic 17px/1.3 var(--serif); letter-spacing: 0.01em;
+  background: linear-gradient(100deg, rgba(240, 200, 105, 0.55) 20%, #fff6dc 45%, rgba(240, 200, 105, 0.55) 70%) 0 0 / 250% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: shimmer 2.4s linear infinite, phrase-in 0.6s var(--spring);
+}
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+@keyframes phrase-in { from { opacity: 0; transform: translateY(6px); filter: blur(4px); } }
+.magic-progress {
+  width: 120px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.1); overflow: hidden; position: relative;
+}
+.magic-progress::after {
+  content: ''; position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--p, 0));
+  background: linear-gradient(90deg, rgba(240, 200, 105, 0.4), #f0c869); transition: transform 0.4s var(--spring);
+}
 .tray-preview { display: flex; flex-direction: column; gap: 8px; padding: 2px 6px 0; animation: tray-in 0.35s var(--spring); }
 @keyframes tray-in { from { opacity: 0; transform: translateY(6px); } }
 .tray-quote {
