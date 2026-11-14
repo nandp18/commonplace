@@ -38,26 +38,32 @@ let observer: IntersectionObserver | null = null
 /**
  * Fades and lifts an element into place when a screen opens. Anything off screen at
  * that moment simply appears, so a long list has nothing left to animate while scrolling.
+ *
+ * Nothing here measures layout while React mounts the list: the observer's first report
+ * (one per element, batched by the browser) says whether it's on screen. Measuring each
+ * card as it mounted forced a fresh layout of the whole page per card.
  */
 export function useReveal<T extends HTMLElement>() {
   const ref = useRef<T>(null)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const box = el.getBoundingClientRect()
-    const offScreen = box.top > window.innerHeight || box.bottom < 0
-    // The element a view transition is morphing into must be visible right away.
-    if (offScreen || reducedMotion() || el.querySelector('[style*="view-transition-name"]')) {
+    // Coming back to a screen, or the element a view transition is morphing into: no entrance, just there.
+    const back = document.documentElement.dataset.nav === 'pop' || document.documentElement.dataset.nav?.startsWith('swipe')
+    if (back || reducedMotion() || el.querySelector('[style*="view-transition-name"]')) {
       el.classList.add('in', 'instant')
       return
     }
     observer ??= new IntersectionObserver(
       (entries) => {
-        for (const e of entries)
-          if (e.isIntersecting) {
-            e.target.classList.add('in')
-            observer!.unobserve(e.target)
-          }
+        for (const e of entries) {
+          const t = e.target as HTMLElement
+          // The first report decides: on screen now, it animates in; off screen, it's simply there for later.
+          if (e.isIntersecting) t.classList.add('in')
+          else if (!t.dataset.seen) t.classList.add('in', 'instant')
+          t.dataset.seen = '1'
+          if (t.classList.contains('in')) observer!.unobserve(t)
+        }
       },
       { rootMargin: '0px 0px -6% 0px' },
     )

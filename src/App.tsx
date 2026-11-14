@@ -10,6 +10,7 @@ import { BookView, NewQuote, QuoteView, Settings, Shelf } from './screens'
 import { useStore } from './store'
 import { takeSwipeNav } from './swipe'
 import { preloadable, whenIdle } from './lazy'
+import { rememberScroll, restoreScroll, scrollTargetFor } from './progressive'
 import type { Store } from './store'
 
 // Kept out of the startup bundle: capture brings the OCR engine, the ocean its WebGL and sea life.
@@ -42,10 +43,15 @@ function useRoute() {
   useEffect(() => {
     const on = () => {
       const next = location.hash
+      // Going back up a level returns to where you were, as on iOS; anything else starts at the top.
+      rememberScroll(current.current)
+      const back = depth(next) < depth(current.current)
       const apply = () => {
+        const spot = scrollTargetFor(next, back)
         current.current = next
         flushSync(() => setHash(next))
-        window.scrollTo(0, 0)
+        window.scrollTo(0, spot?.y ?? 0)
+        restoreScroll(spot)
       }
       const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown }
       // While the filing ceremony covers the screen, it does the transition itself.

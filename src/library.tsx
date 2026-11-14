@@ -8,6 +8,7 @@ import type { Store } from './store'
 import type { Quote } from './types'
 import { byPage, quoteOfTheDay, search } from './util'
 import { swipeTo, SwipeArea } from './swipe'
+import { useProgressive } from './progressive'
 
 type View = 'timeline' | 'books' | 'tags'
 type Tab = View | 'ocean'
@@ -176,23 +177,33 @@ function Timeline({ store, freshId }: { store: Store; freshId?: string }) {
     }
     return [...m]
   }, [store.quotes])
+  const offsets = useMemo(() => {
+    let n = 0
+    return months.map(([, qs]) => ((n += qs.length), n - qs.length))
+  }, [months])
+  const limit = useProgressive(store.quotes.length)
   const daily = quoteOfTheDay(store.quotes)
 
   return (
     <>
       <DotSea quotes={store.quotes} dailyId={daily?.id} freshId={freshId} bookOf={bookOf} />
-      {months.map(([month, qs]) => (
-        <section key={month}>
-          <h3 className="label sticky-label">
-            {month} <span className="label-count">{qs.length}</span>
-          </h3>
-          <div className="quote-list">
-            {qs.map((q, i) => (
-              <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} fresh={q.id === freshId} index={i} />
-            ))}
-          </div>
-        </section>
-      ))}
+      {months.map(([month, qs], m) => {
+        // Only as many cards as the list has reached so far (see useProgressive).
+        const shown = Math.max(0, Math.min(qs.length, limit - offsets[m]))
+        if (!shown) return null
+        return (
+          <section key={month}>
+            <h3 className="label sticky-label">
+              {month} <span className="label-count">{qs.length}</span>
+            </h3>
+            <div className="quote-list">
+              {qs.slice(0, shown).map((q, i) => (
+                <QuoteCard key={q.id} quote={q} book={bookOf(q.bookId)} fresh={q.id === freshId} index={i} />
+              ))}
+            </div>
+          </section>
+        )
+      })}
     </>
   )
 }
@@ -257,6 +268,7 @@ function Tags({ store }: { store: Store }) {
   const [tag, setTag] = useState<string | null>(null)
   const active = tag ?? tags[0]?.[0]
   const quotes = store.quotes.filter((q) => q.tags.includes(active ?? ''))
+  const limit = useProgressive(quotes.length)
 
   if (tags.length === 0) return <p className="secondary center pad">Add #tags to quotes to group them by theme.</p>
   return (
@@ -276,7 +288,7 @@ function Tags({ store }: { store: Store }) {
         ))}
       </div>
       <div className="quote-list" key={active}>
-        {quotes.map((q, i) => (
+        {quotes.slice(0, limit).map((q, i) => (
           <QuoteCard key={q.id} quote={q} book={q.bookId ? store.bookMap.get(q.bookId) : undefined} index={i} source="tags" />
         ))}
       </div>
