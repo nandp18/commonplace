@@ -264,10 +264,10 @@ main.full { padding: 0; }
 
 .quote-text {
   font-family: var(--sans); font-size: 18px; line-height: 1.45; letter-spacing: -0.015em; color: var(--text);
-  text-wrap: pretty; -webkit-hyphens: auto; hyphens: auto;
+  text-wrap: pretty; -webkit-hyphens: none; hyphens: none; overflow-wrap: break-word;
 }
 .quote-text p + p { margin-top: 0.65em; }
-.quote-text.gu { font-size: 17.5px; line-height: 1.7; letter-spacing: 0; -webkit-hyphens: manual; hyphens: manual; }
+.quote-text.gu { font-size: 17.5px; line-height: 1.7; letter-spacing: 0; }
 .quote-text.large { font-size: 23px; line-height: 1.38; letter-spacing: -0.022em; }
 .quote-text.large.gu { font-size: 21px; line-height: 1.65; }
 /* Opening mark hangs in gold; text block stays flush. */
