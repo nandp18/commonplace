@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OCR Bench</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400..600&family=Inter:wght@400..600&family=JetBrains+Mono:wght@400..500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fff;
+        --fg: #1a1a1a;
+        --muted: #6b6b6b;
+        --line: #e4e4e4;
+        --panel: #f7f7f5;
+        --good: #1f7a3d;
+        --bad: #b42318;
+        --gold: #b8860b;
+        --missing-bg: #e7f6ec;
+        --extra-bg: #fde8e7;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #141414;
+          --fg: #ececec;
+          --muted: #9a9a9a;
+          --line: #2c2c2c;
+          --panel: #1c1c1c;
+          --good: #5cc98a;
+          --bad: #ff7b6e;
+          --gold: #e0b44a;
+          --missing-bg: #17331f;
+          --extra-bg: #3a1b18;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 Inter, system-ui, sans-serif; }
+      header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 2; }
+      header h1 { font-size: 15px; margin: 0 8px 0 0; }
+      button, select, input[type='text'] { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; }
+      button { cursor: pointer; }
+      button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .tabs button[aria-pressed='true'] { background: var(--fg); color: var(--bg); }
+      main { padding: 16px; }
+      .muted { color: var(--muted); }
+      table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+      th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+      th { font-weight: 600; color: var(--muted); font-size: 12px; }
+      .num { text-align: right; }
+      .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
+      .card { background: var(--panel); border-radius: 8px; padding: 12px; }
+      .card .big { font-size: 24px; font-weight: 600; }
+      .review { display: grid; grid-template-columns: 220px 1fr 1fr; gap: 16px; align-items: start; }
+      @media (max-width: 900px) { .review { grid-template-columns: 1fr; } }
+      .list { max-height: calc(100vh - 120px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+      .list button { display: flex; justify-content: space-between; width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; text-align: left; }
+      .list button[aria-current='true'] { background: var(--panel); font-weight: 600; }
+      .photo { max-height: calc(100vh - 120px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+      .photo img { display: block; width: 100%; }
+      .photo.zoom img { width: 200%; }
+      textarea { width: 100%; min-height: 50vh; font: 15px/1.6 'Noto Sans Gujarati', Inter, sans-serif; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+      .diff { font: 14px/1.7 'Noto Sans Gujarati', Inter, sans-serif; background: var(--panel); border-radius: 8px; padding: 10px; max-height: 30vh; overflow: auto; }
+      .diff .missing { background: var(--missing-bg); border-radius: 3px; }
+      .diff .extra { background: var(--extra-bg); text-decoration: line-through; border-radius: 3px; }
+      .ok { color: var(--good); }
+      .err { color: var(--bad); }
+      .draft { color: var(--gold); }
+      code { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/bench/main.ts"></script>
+  </body>
+</html>

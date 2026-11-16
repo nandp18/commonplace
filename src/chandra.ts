@@ -171,6 +171,11 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Read a page with Chandra through the Worker. Rejects on any failure so the caller can fall back. */
 export async function readWithChandra(img: HTMLImageElement, progress: (p: number) => void): Promise<OcrWord[]> {
+  return wordsFromChandra(await fetchChandra(img, progress), img.naturalWidth, img.naturalHeight)
+}
+
+/** Chandra's raw result for a page, as `wordsFromChandra` takes it. The benchmark saves these to score again for free. */
+export async function fetchChandra(img: HTMLImageElement, progress: (p: number) => void): Promise<unknown> {
   if (!CHANDRA_PROXY) throw new Error('Chandra is not set up')
   const started = Date.now()
   const signal = AbortSignal.timeout(GIVE_UP_MS)
@@ -188,7 +193,7 @@ export async function readWithChandra(img: HTMLImageElement, progress: (p: numbe
       if (!res.ok) throw new Error(`Chandra check failed (${res.status})`)
       const data = await res.json()
       if (data.status === 'failed') throw new Error(data.error)
-      if (data.status === 'complete') return wordsFromChandra(data.json, img.naturalWidth, img.naturalHeight)
+      if (data.status === 'complete') return data.json
     }
     throw new Error('Chandra took too long')
   } finally {

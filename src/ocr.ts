@@ -160,11 +160,11 @@ function flattenPhoto(img: HTMLImageElement) {
  * Gujarati pages try Chandra first. On the phone they're read as photographed and again
  * flattened, keeping the better read.
  */
-export async function readPage(img: HTMLImageElement, lang: Lang, progress: Progress): Promise<OcrWord[]> {
+export async function readPage(img: HTMLImageElement, lang: Lang, progress: Progress, { chandra: useChandra = true } = {}): Promise<OcrWord[]> {
   const W = img.naturalWidth, H = img.naturalHeight
   if (lang !== 'guj') return readWords(img, W, H, lang, progress)
   // Chandra reads Gujarati far better; anything going wrong (offline, out of credit) lands on Tesseract.
-  const chandra = await readWithChandra(img, progress).catch(() => [])
+  const chandra = useChandra ? await readWithChandra(img, progress).catch(() => []) : []
   if (chandra.length > 0) return chandra
   progress(0)
   const plain = await readWords(img, W, H, lang, (p) => progress(p / 2))

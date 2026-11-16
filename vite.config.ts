@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { bench } from './src/bench/plugin'
 
 /**
  * Emit `sw.js` with the list of every built file to keep offline, and a version
@@ -33,5 +34,5 @@ function offline(): Plugin {
 // Relative base so the build works at https://<user>.github.io/<repo>/
 export default defineConfig({
   base: './',
-  plugins: [react(), offline()],
+  plugins: [react(), offline(), bench()],
 })
