@@ -163,6 +163,8 @@ const glyphs = {
 } as const
 
 export type IconName = keyof typeof glyphs
+/** Every glyph there is, in the order they're drawn above (the style guide lists them all). */
+export const iconNames = Object.keys(glyphs) as IconName[]
 
 const parsed = Object.fromEntries(
   Object.entries(glyphs).map(([name, art]) => {

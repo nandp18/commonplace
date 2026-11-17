@@ -17,6 +17,7 @@ import type { Store } from './store'
 const captureScreen = preloadable(() => import('./Capture'))
 const oceanScreen = preloadable(() => import('./ocean'))
 const labScreen = preloadable(() => import('./sealab'))
+const styleScreen = preloadable(() => import('./styleguide'))
 
 function Capture({ store }: { store: Store }) {
   const { Capture } = captureScreen.useModule()
@@ -30,11 +31,15 @@ function SeaLab() {
   const { SeaLab } = labScreen.useModule()
   return <SeaLab />
 }
+function StyleGuide() {
+  const { StyleGuide } = styleScreen.useModule()
+  return <StyleGuide />
+}
 
 /** How deep a route sits, so navigation can slide forward or back like iOS. */
 const depth = (hash: string) => {
   const s = hash.replace(/^#\/?/, '').split(/[/?]/)[0]
-  return s === 'book' || s === 'addbook' || s === 'quote' || s === 'settings' || s === 'new' || s === 'ocean' ? 1 : s === 'capture' ? 2 : 0
+  return s === 'book' || s === 'addbook' || s === 'quote' || s === 'settings' || s === 'new' || s === 'ocean' ? 1 : s === 'capture' || s === 'style' ? 2 : 0
 }
 
 function useRoute() {
@@ -190,6 +195,9 @@ export function App() {
       break
     case 'lab':
       screen = <SeaLab />
+      break
+    case 'style':
+      screen = <StyleGuide />
       break
     default:
       screen = <Library store={store} freshId={params.get('new') ?? undefined} />

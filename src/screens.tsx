@@ -648,6 +648,11 @@ export function Settings({ store }: { store: Store }) {
         />
         <Row icon="share" label="Export as CSV" tint onClick={() => download('commonplace.csv', toCsv(store.quotes, store.bookMap), 'text/csv')} />
       </Group>
+
+      <Group header="Under the hood" footer="The app's design system, and a playground for the sea.">
+        <Row icon="sparkle" label="Style guide" chevron href="#/style" />
+        <Row icon="quote" label="Sea lab" chevron href="#/lab" />
+      </Group>
     </Page>
   )
 }
