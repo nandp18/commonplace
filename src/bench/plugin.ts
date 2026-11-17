@@ -19,7 +19,8 @@ const SAFE_ID = /^[\w-]+$/
 const send = (res: ServerResponse, status: number, body: unknown, type = 'application/json') => {
   res.statusCode = status
   res.setHeader('Content-Type', type)
-  res.end(type === 'application/json' ? JSON.stringify(body) : (body as Buffer))
+  // Files are sent as they are on disk; only values built here are serialized.
+  res.end(Buffer.isBuffer(body) ? body : JSON.stringify(body))
 }
 
 const body = (req: IncomingMessage) =>

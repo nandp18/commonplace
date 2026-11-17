@@ -316,8 +316,44 @@ function renderReview(root: HTMLElement, startAt?: string) {
     } else void showDiff()
   }
 
-  root.replaceChildren(h('div', { className: 'review' }, list, left, right))
+  const draftAll = h('button', {}, 'Draft all empty keys')
+  const draftStatus = h('span', { className: 'muted' })
+  draftAll.onclick = async () => {
+    draftAll.disabled = true
+    const empty = pages.filter((p) => p.lines.length === 0)
+    for (const [i, p] of empty.entries()) {
+      draftStatus.textContent = `Drafting ${i + 1} of ${empty.length}: ${p.id}`
+      const words = await draftFor(p)
+      if (p.lines.length > 0) continue // drafted by hand in the meantime
+      const res = await fetch(`/bench-api/truth/${p.id}`, {
+        method: 'POST',
+        body: JSON.stringify({ lines: words.text.split('\n').filter((l) => l.trim()), pageNumber: words.pageNumber, verified: false, draftFrom: words.from }),
+      })
+      if (res.ok) Object.assign(p, await res.json())
+      drawList()
+    }
+    draftStatus.textContent = `Drafted ${empty.length} page(s). Each still needs checking.`
+    draftAll.disabled = false
+  }
+
+  root.replaceChildren(h('div', { className: 'row' }, draftAll, draftStatus), h('div', { className: 'review' }, list, left, right))
   draw()
+}
+
+/** Chandra's free tier allows about 10 requests a minute and one read makes several, so live reads are spaced out. */
+const LIVE_CHANDRA_GAP_MS = 35_000
+let lastLiveChandra = 0
+
+/** A first draft of a page's key: Chandra's read if it has one, otherwise Tesseract's. */
+async function draftFor(p: Page): Promise<{ text: string; pageNumber?: string; from: Engine }> {
+  if (!p.hasChandra) {
+    await new Promise((r) => setTimeout(r, Math.max(0, lastLiveChandra + LIVE_CHANDRA_GAP_MS - Date.now())))
+    lastLiveChandra = Date.now()
+  }
+  let from: Engine = 'chandra'
+  let words = await read(p, from).catch(() => [])
+  if (words.length === 0) words = await read(p, (from = 'tesseract')).catch(() => [])
+  return { text: textOfWords(words), pageNumber: detectPageNumber(words), from }
 }
 
 // ——— Shell ———
