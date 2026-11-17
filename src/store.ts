@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { deleteBooks, deleteQuotes, loadAll, newId, putBooks, putQuotes } from './db'
 import { planImport, type ImportFile, type ImportPlan } from './importFile'
 import { isSample, sampleLibrary } from './samples'
-import { explainSyncError, loadSyncConfig, sync } from './sync'
+import { explainSyncError, loadSyncConfig, settle, sync } from './sync'
 import type { Book, Collection, Quote } from './types'
 
 const LAST_BOOK = 'commonplace.lastBook'
@@ -72,8 +72,11 @@ export function useStore() {
         books: local.books.filter((b) => !isSample(b.id)),
         quotes: local.quotes.filter((q) => !isSample(q.id)),
       })
-      await putBooks(merged.books)
-      await putQuotes(merged.quotes)
+      // Edits made while the sync was out are newer than what it merged: keep them, and sync again.
+      const { write, pending } = settle(merged, await loadAll())
+      await putBooks(write.books)
+      await putQuotes(write.quotes)
+      if (pending) again.current = true
       setAll(await loadAll())
       localStorage.setItem(LAST_SYNC, String(started))
       setLastSync(started)

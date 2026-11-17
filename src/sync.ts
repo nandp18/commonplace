@@ -100,6 +100,25 @@ export function merge(local: Collection, remote: Collection | null): Collection 
   }
 }
 
+/**
+ * What to write back on this device once a sync returns. The sync merged the copy taken when it
+ * started; anything changed here while it was out (a note typed just after Save) is newer than
+ * that, so it's kept rather than overwritten, and `pending` says another sync should push it.
+ */
+export function settle(merged: Collection, current: Collection): { write: Collection; pending: boolean } {
+  let pending = false
+  const keep = <T extends Rec>(records: T[], now: T[]) => {
+    const here = new Map(now.map((r) => [r.id, r.updatedAt]))
+    return records.filter((r) => {
+      const newer = (here.get(r.id) ?? -Infinity) > r.updatedAt
+      if (newer) pending = true
+      return !newer
+    })
+  }
+  const write = { ...merged, books: keep(merged.books, current.books), quotes: keep(merged.quotes, current.quotes) }
+  return { write, pending }
+}
+
 const serialize = (c: Collection) => JSON.stringify(c, null, 2) + '\n'
 
 /** Pull, merge, and push if anything changed. Returns the merged collection. */

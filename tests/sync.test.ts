@@ -1,4 +1,4 @@
-import { sync, merge, explainSyncError, GitHubError } from '../src/sync.ts'
+import { sync, merge, settle, explainSyncError, GitHubError } from '../src/sync.ts'
 import assert from 'node:assert'
 
 // Fake GitHub contents API
@@ -53,5 +53,25 @@ assert.equal(gh(502).retry, true)
 assert.deepEqual(explainSyncError(new TypeError('Failed to fetch'), where, false), { message: 'Offline', retry: true, offline: true })
 assert.equal(explainSyncError(new TypeError('Failed to fetch'), where, true).retry, true)
 assert.equal(explainSyncError(new Error('Sync conflict: please try again'), where).retry, true)
+
+// A note typed while a sync was out isn't overwritten by the copy the sync started with
+{
+  const sent = q('n', 10, 'Saved')
+  const merged = { version: 1 as const, books: [book], quotes: [sent, q('r', 7, 'From the other phone')] }
+  const typedMeanwhile = { ...sent, note: 'Typed during the sync', updatedAt: 20 }
+  const now = { version: 1 as const, books: [book], quotes: [typedMeanwhile] }
+  const { write, pending } = settle(merged, now)
+  assert.deepEqual(write.quotes.map((x) => x.id), ['r'], 'only the other phone’s quote is written back')
+  assert.equal(write.books.length, 1)
+  assert.equal(pending, true, 'the edit is still to be pushed')
+
+  // A newer edit from elsewhere still wins over an older local one
+  const older = { version: 1 as const, books: [book], quotes: [q('n', 5, 'Old here')] }
+  assert.deepEqual(settle(merged, older).write.quotes.map((x) => x.id), ['n', 'r'])
+  assert.equal(settle(merged, older).pending, false)
+
+  // Nothing changed meanwhile: everything is written, nothing pending
+  assert.deepEqual(settle(merged, merged), { write: merged, pending: false })
+}
 
 console.log('sync tests passed; commits:', puts)
